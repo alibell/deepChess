@@ -34,25 +34,25 @@ class playChess ():
         The chess board is representated 
     """
     
-    # Knownleage about chess
-    
-    cav_move = np.array([
-        [2,1], [2,-1],
-        [-1,2],[1,2],
-        [-1,-2],[1,-2],
-        [-2,-1],[-2,1]
-    ])
-    cav_move = cav_move.reshape(8,2,1)
-    bishop_move = np.array([[1,1],[-1,1],[1,-1],[-1,-1]])
-    rook_move = np.array([[0,1],[0,-1],[1,0],[-1,0]])
-    king_move = np.concatenate([bishop_move, rook_move])
-    
     def __init__ (self, load_state = None):
         """
             load_state :
                 None if the chess is initialized as a new game
                 (board, turn) : if the chess is initialized from a current position, then board is the board matrix and turn a binary integer representing the next player
         """
+        
+        # Knownleage about chess
+
+        self.cav_move = np.array([
+            [2,1], [2,-1],
+            [-1,2],[1,2],
+            [-1,-2],[1,-2],
+            [-2,-1],[-2,1]
+        ])
+        self.cav_move = self.cav_move.reshape(8,2,1)
+        self.bishop_move = np.array([[1,1],[-1,1],[1,-1],[-1,-1]])
+        self.rook_move = np.array([[0,1],[0,-1],[1,0],[-1,0]])
+        self.king_move = np.concatenate([self.bishop_move, self.rook_move])
         
         # Pre-computing board characteristics
         
@@ -86,12 +86,16 @@ class playChess ():
         else:
             self.board = self._initial_board
             self.current_player = random.randint(0,1)
-            
+                        
+        ## Initialization of number of turn
+        self.turn = 1
+        self.mate = False # Play until is a mate
+
         ## Sending it to board history
         self._memorize_board(self.board)
         
-        # Initialization of number of turn
-        self.turn = 1
+        ## Pre-compute next moves
+        self.nextMoves = self._getCurrentNextMove()
     
     ###
     ### Ensemble of functions for analyzing the chess board
@@ -145,7 +149,8 @@ class playChess ():
     
     ### Moves
     
-    def getNextMove (self):
+    def _getCurrentNextMove (self):
+        
         """
             For the actual board, return the possible next moves
             Output : list composed of next moves.
@@ -153,6 +158,19 @@ class playChess ():
         """
         
         moves = self._getNextMove(self.board_layers_history[-1], self.current_player, self.turn)
+        moves_list = reduce(add, list(moves.values()))
+        
+        return moves_list
+    
+    def _getOpponentsCurrentNextMove (self):
+        
+        """
+            For the actual board, return the possible next moves of the opponents (1 move in the futur)
+            Output : list composed of next moves.
+                     Each move is composed of a list of source coordonates and target coordonates
+        """
+        
+        moves = self._getNextMove(self.board_layers_history[-1], 1-self.current_player, self.turn+1)
         moves_list = reduce(add, list(moves.values()))
         
         return moves_list
@@ -171,8 +189,8 @@ class playChess ():
                     Each move is represented by a list of two tuple : previous and new position
         """
         
-        current_player_positions = self._playChess__player_layers_positions[player]
-        current_opponent_positions = self._playChess__player_layers_positions[1-player]
+        current_player_positions = self.__player_layers_positions[player]
+        current_opponent_positions = self.__player_layers_positions[1-player]
 
         # Get the positions
         positions = np.array([np.where(x == 1) for x in board_layers], dtype = "object")
@@ -191,8 +209,9 @@ class playChess ():
 
         for i in range(6):
             if move_functions[i] is not None:
-                moves[i] = move_functions[i](player_position, opponent_position, player, turn)
-                moves[i] = moves[i].T.reshape(moves[i].shape[1], 2, 2).tolist()
+                moves_function = move_functions[i](player_position, opponent_position, player, turn)
+                if len(moves_function) != 0:
+                    moves[i] = moves_function.T.reshape(moves_function.shape[1], 2, 2).tolist()
             
         return moves
     
@@ -236,27 +255,34 @@ class playChess ():
         """            
         current_range = 1 + int(turn == 1) # Possible range of the move
         direction = -(1-player)+(player)*1 # Direction of the move
+        all_oponents = np.concatenate(opponent_position, axis = 1) # Location of the opponents
         
         # Current position
         wp = player_position[0] # Get the player position
         wp_repeat = np.concatenate([
-            wp for j in range(current_range)
+            wp for j in range(2)
         ], axis = 1) # Repeat it to cover the possible positions
+        
+        wp_range = wp_repeat if current_range == 2 else wp
         
         # 1. Computing classical move : straight forward
         
         npos = np.stack([
             np.concatenate([wp[0,:]+direction*(j+1) for j in range(current_range)]).flatten(),
-            wp_repeat[1,:]
+            wp_range[1,:]
         ])
         
         moves = np.concatenate([
-            wp_repeat,
+            wp_range,
             npos
         ])
         
+        ## Need to remove position in which there is an opponent
+        collisions = np.where((all_oponents[:,None].T == npos.T).all(axis=2))[1]
+        moves = np.delete(moves, collisions, axis = 1)
+
+        
         # 2. Computing diagonal moves
-        all_oponents = np.concatenate(opponent_position, axis = 1)
         all_diagonal = np.stack([
             np.concatenate([wp[0,:]+direction*(1) for j in list([-1,1])]).flatten(),
             np.concatenate([wp[1,:]+j*(1) for j in list([-1,1])]).flatten()
@@ -265,7 +291,7 @@ class playChess ():
         possible_moves = np.concatenate([
                 wp_repeat,
                 all_diagonal
-        ])[:,np.where((all_oponents[:,None].T == all_diagonal.T).all(axis=2))[0]]
+        ])[:,np.where((all_oponents[:,None].T == all_diagonal.T).all(axis=2))[1]]
         
         if possible_moves.shape[-1] != 0:
             moves = np.concatenate([
@@ -287,7 +313,7 @@ class playChess ():
         ], axis = 1) # Repeat it to cover the possible positions
         
         # Getting new positions
-        npos = np.concatenate([wp + cav_move[j] for j in range(8)], axis = 1)
+        npos = np.concatenate([wp + self.cav_move[j] for j in range(8)], axis = 1)
         
         # Concatenating with wp
         moves = np.concatenate([
@@ -328,24 +354,27 @@ class playChess ():
                 overlapping_player = np.where((new_pos[:,None] == player_position_concat.T).all(axis=2))[0]
                 overlapping_opponent = np.where((new_pos[:,None] == opponent_position_concat.T).all(axis=2))[0]
 
-                # We disable the overlapping positions
-                directions[np.concatenate([overlapping_opponent, overlapping_player])] = False
-
                 # For overlapping player, we disable the move
+                temp_pos = np.copy(new_pos)
                 if (len(overlapping_player) > 0):
-                    new_pos = np.delete(new_pos, overlapping_player, axis = 0)
+                    temp_pos = np.delete(temp_pos, overlapping_player, axis = 0)
 
                 # Storing the positions
-                new_move = np.concatenate([
-                    np.concatenate([pos for n in range(len(new_pos))], axis = 1),
-                    new_pos.T
-                ])
-                moves.append(new_move)
+                if len(temp_pos) > 0:
+                    new_move = np.concatenate([
+                        np.concatenate([pos for n in range(len(temp_pos))], axis = 1),
+                        temp_pos.T
+                    ])
+                    moves.append(new_move)
 
-                # For overlapping opponent, we disable the move for next loop
-                if (len(overlapping_opponent) > 0):
-                    new_pos = np.delete(new_pos, overlapping_opponent, axis = 0)
-
+                # We disable overlapping positions
+                overlapping = np.concatenate([overlapping_opponent, overlapping_player])
+                
+                directions[np.where(directions == True)[0][overlapping]] = False ## In directions
+                ## In positions
+                if (len(overlapping) > 0):
+                    new_pos = np.delete(new_pos, overlapping, axis = 0)
+                    
                 # We stop after 8 moves
                 if n_move == 8:
                     break
@@ -353,8 +382,9 @@ class playChess ():
                 # Go for net loop
                 n_move += 1
         
-        moves = np.concatenate(moves, axis = 1)
-        moves = self.__removeOutOfBorderMoves(moves)
+        if (len(moves) > 0):
+            moves = np.concatenate(moves, axis = 1)
+            moves = self.__removeOutOfBorderMoves(moves)
         
         return moves
         
@@ -362,7 +392,7 @@ class playChess ():
         
         # Current position
         wp = player_position[2] # Get the player position
-        moves = self._getLongRangeMoves(bishop_move, wp ,player_position, opponent_position, player, turn)
+        moves = self._getLongRangeMoves(self.bishop_move, wp ,player_position, opponent_position, player, turn)
         
         return moves
  
@@ -370,7 +400,7 @@ class playChess ():
         
         # Current position
         wp = player_position[3] # Get the player position
-        moves = self._getLongRangeMoves(rook_move, wp ,player_position, opponent_position, player, turn)
+        moves = self._getLongRangeMoves(self.rook_move, wp ,player_position, opponent_position, player, turn)
 
         return moves
     
@@ -378,24 +408,33 @@ class playChess ():
         
         # Mix of Bishop and Rook, easy one
         wp = player_position[4] # Get the player position
-        bishop_moves = self._getLongRangeMoves(bishop_move, wp ,player_position, opponent_position, player, turn)
-        rook_moves = self._getLongRangeMoves(rook_move, wp ,player_position, opponent_position, player, turn)
+        bishop_moves = self._getLongRangeMoves(self.bishop_move, wp ,player_position, opponent_position, player, turn)
+        rook_moves = self._getLongRangeMoves(self.rook_move, wp ,player_position, opponent_position, player, turn)
         
-        moves = bishop_moves + rook_moves
+        moves = []
+        
+        if (len(bishop_moves) != 0 and len(rook_moves) != 0):
+            moves = np.concatenate([bishop_moves, rook_moves], axis = 1)
+        elif (len(bishop_moves) != 0):
+            moves = bishop_moves
+        elif (len(rook_moves) != 0):
+            moves = rook_moves
         
         return moves
     
     def _getKingMoves (self, player_position, opponent_position, player, turn):
         
         wp = player_position[5] # Get the player position
+        moves = []
         
-        moves = np.concatenate([
-            np.concatenate([wp for i in range(8)], axis = 1),
-            king_move.T+wp
-        ])
-        
-        moves = self.__removeCollisionMoves(self.__removeOutOfBorderMoves(moves), player_position)
-        
+        if wp.shape[1] > 0:
+            moves = np.concatenate([
+                np.concatenate([wp for i in range(8)], axis = 1),
+                self.king_move.T+wp
+            ])
+
+            moves = self.__removeCollisionMoves(self.__removeOutOfBorderMoves(moves), player_position)
+                        
         return moves
     
     ###
@@ -442,41 +481,167 @@ class playChess ():
     # Ensemble of methods to play
     ###
     
-    def play_move(self, move):
+    def _promotion(self, board, player, promotion = 5):
+        
+        """
+            Generic function for promotion
+            Given a board and a player, return the board after application of the promotion
+            
+            Input :
+                - board : matrix representation of the board
+                - player : identification of the player
+                - the piece in which we want to promote, by default it is 5 (queen)
+                
+            Return the board
+        """
+        
+        last_row = 7 if player == 1 else 0
+        
+        old_board = board.copy()
+        board[last_row, np.where(
+            (np.mod(board[last_row,:], 10) == player) & \
+            (board[last_row,:]) != 0
+        )[0]] = (promotion*10)+player
+        
+        return board
+    
+    def _apply_move (self, move, board):
+        
+        """
+            Basically apply virtually a move to a board without any sanity check
+            
+            Input :
+                move to apply
+            Ouput :
+                board after appliance of the move
+        """
+        
+        board_copy = board.copy()
+        piece = board_copy[tuple(move[0])] 
+        board_copy[tuple(move[0])] = 0 # Setting empty the previous position
+        board_copy[tuple(move[1])] = piece # Setting the new position
+        
+        return board_copy
+    
+    def play_move(self, move, promotion = 5):
         
         """
             play_move :
                 Play a move
                 For that :
+                    0. Play only if not mate
                     1. Check the validity of the move
                     2. Play the move
-                    3. Analyse the consequence of the move
+                    3. Promote pieces
                     4. Storing and recomputing the new state
                     5. Update the player and eventually the turn
-                    6. Promote pieces
-                    7. Evaluate if there is a winner
+                    6. Evaluate if there is a winner
+                    
+                Input :
+                    Move : format [[x_source,y_source], [x_target, y_targer]]
+                    Promotion : id of the piece to which to promote in case of promotion
         """
         
-        # Getting possible moves
-        moves = self.getNextMove()
+        # 0. Check if mate
+        if self.mate == True:
+            return
         
-        # Check the move
-        if move not in moves:
+        # 1. Check the move
+        ## Getting possible moves
+        if move not in self.nextMoves:
             raiseException("incorrect_move")
         
-        # Play the move
+        # 2. Play the move
         new_board = self.board.copy()
-        
-        piece = new_board[tuple(move[0])] 
-        new_board[tuple(move[0])] = 0 # Setting empty the previous position
-        new_board[tuple(move[1])] = piece # Setting the new position
-        
-        # Storing and recomputing the new state
-        # self._memorize_board(new_board)
-        
-        return new_board
+        new_board = self._apply_move(move, new_board)
+    
+        # 3. Promote pieces
+        new_board = self._promotion(new_board, self.current_player, promotion)
 
+        # 4. Storing and recomputing the new state
+        self.board = new_board
+        self._memorize_board(self.board)
+        
+        # 5. Update the player and eventually the turn
+        self.current_player = 1-self.current_player
+        if self.current_player != 0:
+            self.turn += 1
+        
+        # 6. Evaluate if there is a winner
+        ## Get next moves
+        self.nextMoves = self._getCurrentNextMove()
+        self.opponentNextMoves = self._getOpponentsCurrentNextMove()
+        
+        ## Checking if in check
+        if (self.is_check()):
+            self.mate = self.is_mate()
+        
+        pass
+    
+    ###
+    # Ensemble of functions for game evaluation
+    ###
+    
+    def is_check(self):
+        
+        """
+            Analyze is the current game is check
+            
+            Input : None
+            Output : boolean, true if check, false otherwise
+        """
+        
+        king_location = np.where(self.board == 60+self.current_player)
+        if king_location[0].sum() > 0:
+            king_location = np.array(king_location).reshape(2).tolist()
+            check_situations = [True for x in self.opponentNextMoves if king_location == x[1]]
+            is_check = len(check_situations) > 0
+        else:
+            is_check = False
+        
+        return is_check
+    
+    def is_mate(self):
+
+        current_player_positions = self.__player_layers_positions[self.current_player]
+        current_opponent_positions = self.__player_layers_positions[1-self.current_player]
+        
+        # Get the positions
+        positions = np.array([np.where(x == 1) for x in self.board_layers_history[-1]], dtype = "object")
+        player_position = [np.stack(x) for x in positions[current_player_positions]]
+        opponent_position = [np.stack(x) for x in positions[current_opponent_positions]]
+
+        king_moves = chess._getKingMoves(player_position, opponent_position, self.current_player, self.turn+1)
+
+        mate_list = []
+        if len(king_moves) > 0:
+            
+            king_moves = king_moves.T.reshape(king_moves.shape[1], 2, 2).tolist()
+
+            for king_move in king_moves:
+                
+                king_move_board = self._apply_move(king_move, self.board) # Applying the move to the king
+                king_move_next_move = self._getNextMove(
+                    self._board_to_layer(king_move_board), 
+                    1-chess.current_player, 
+                    chess.turn + 1
+                ) # Getting the next move of the opponents
+                king_move_next_move = reduce(add, list(king_move_next_move.values())) # Getting the next move of the opponents
+                
+                # Is the king in the opponent next move ?
+                king_move_mate = len([True for x in king_move_next_move if king_move[1] == x[1]]) > 0
+                mate_list.append(king_move_mate)
+        
+        mate = True in mate_list
+        
+        return mate
+
+# +
 chess = playChess()
-next_move = chess.getNextMove()
 
-chess.play_move(next_move[0])
+for i in range(1000):
+    next_move = chess._getCurrentNextMove()
+    if (len(next_move) > 0):
+        new_board = chess.play_move(next_move[random.randint(0, len(next_move)-1)])
+            
+chess.board
