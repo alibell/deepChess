@@ -26,7 +26,11 @@ import math
 ### Thus, we store a full chess board with a 8x8 matrix containing the 64 8-bit integer : 512 bit
 # -
 
-def np_delete (np_array, list_to_remove, axis = 0):
+##
+# Functions for board manipulation
+##
+
+def _np_delete (np_array, list_to_remove, axis = 0):
     
     """
         Faster implementation of np.remove, do it by getting the right index
@@ -42,6 +46,67 @@ def np_delete (np_array, list_to_remove, axis = 0):
     
     return np_array
 
+##
+# Pre-computing transcodage rules
+##
+
+# Generating the moves identifiant and the moves matrice
+## Needed for transcodage of moves in neural network format
+
+def _generate_moves_matrice ():
+    distance = list(range(1, 8, 1)) # Distance of action
+    direction = ["NW","N","NE","E","SW","S","SE","W"] # Direction of action
+    action = ["S","K","PK","PB","PR"] # Types of action
+
+    moves = {}
+    moves_matrice = np.zeros((len(distance), len(direction), len(action)))
+
+    move_index = 0
+    for i in range(len(direction)):
+        for j in range(len(distance)):
+            for k in range(len(action)):
+                _action = action[k]
+                _direction = direction[i]
+                _distance = int(distance[j])
+
+                # Do not process moves > 1 when not going straightforward
+                if _action != 'S' and _distance > 1:
+                    break
+                # Process promote only if pion
+                if _action[0] == 'P' and (_direction not in ['N','NW','NE']):
+                    if _direction in ["S","SW","SE"]:
+                        _direction = ['N','NW','NE'][["S","SW","SE"].index(_direction)] # Same id in P for S, SW and SE
+                    else:
+                        break
+
+                # Store the move id
+                move_id = _action+"_"+_direction+"_"+str(_distance)
+                if move_id not in moves.keys():
+                    moves[move_id] = move_index
+                    move_index += 1
+
+                # Store the move id
+                moves_matrice[j,i,k] = moves[move_id]+1
+
+    moves_matrice = moves_matrice.astype("int8")
+    
+    # Pre-computation of matrice for direction
+    directions_matrice_ref = np.zeros((2,2,2,2)) # S E N W
+
+    for i in range(len(direction)):
+        coordonates = tuple((int(j in direction[i]) for j in ['S','E','N','W']))
+        directions_matrice_ref[coordonates] = i+1
+
+    directions_matrice_ref = directions_matrice_ref.astype("int8")
+    promote_dictionnary_ref = {2:'K',3:'B',4:'R'}
+    
+    return moves, moves_matrice, direction, directions_matrice_ref
+
+moves_ref, moves_matrice_ref, directions_ref, directions_matrice_ref = _generate_moves_matrice()
+
+##
+# Main class
+##
 
 class playChess ():
     
@@ -154,7 +219,7 @@ class playChess ():
         self._memorize_board(self.board)
         
         ## Pre-compute next moves
-        self.nextMoves = self._getCurrentNextMove()
+        self.nextMoves = self.getCurrentNextMove()
     
     ###
     ### Ensemble of functions for analyzing the chess board
@@ -208,7 +273,7 @@ class playChess ():
     
     ### Moves
     
-    def _getCurrentNextMove (self):
+    def getCurrentNextMove (self):
         
         """
             For the actual board, return the possible next moves
@@ -220,6 +285,22 @@ class playChess ():
         moves_list = reduce(add, list(moves.values()))
         
         return moves_list
+    
+    def getCurrentNextMoveWithNN (self):
+        
+        """
+            For the actual board, return the possible next moves with the NN representation of the moves
+            Output :
+                moves_list : list composed of next moves. : Each move is composed of a list of source coordonates and target coordonates
+                moves_matrice : matrice of 8x8x73, where the 8x8 plane represente each movable piece and the 73 dimension represention each possible move, as used in the representation of the moves in the neural network
+        """
+        
+        moves = self._getNextMove(self.board, self.current_player)
+        moves_list = reduce(add, list(moves.values()))
+        
+        nn_moves = self._localToNNMove(moves_list, self.board, self.current_player)
+        
+        return moves_list, nn_moves[1]
     
     def _getOpponentsCurrentNextMove (self):
         
@@ -233,6 +314,10 @@ class playChess ():
         moves_list = reduce(add, list(moves.values()))
         
         return moves_list
+    
+    ##
+    # Correspondance between local and stockFish moves
+    ##
     
     def _movesToStockFish (self, moves, first_move):
         """
@@ -274,6 +359,85 @@ class playChess ():
         ]).reshape(2,2).tolist()
         
         return move
+    
+    ##
+    # Correspondance between local and DeepCNN move
+    ##
+    
+    def _localToNNMove (self, moves, board, player):
+    
+        """
+            localToMove : Convert a local move to the neural network output format
+                The neural network output format is of size 8x8x73, with 8x8 representing the 64 possible concerned piece and 73 the possible move
+                Each value which is set to 1 correspond to a possible move
+                
+                Input :
+                    moves : moves to convert, in local format
+                    board : board as a matrix representation
+                    player : current player
+                Ouput :
+                    moves_id : list containing the id of each move
+                    moves_matrice : moves matrice in neural network format, of size 8x8x73
+        """
+        
+        # Just to not rewrite everything
+        next_move = moves
+        current_player = player
+        promote_rank = 0 if current_player == 0 else 7 # The promote rank is needed to identify when a promotion could happen
+
+        #
+        # Converting move list to list of moves index
+        #
+
+        next_move_array = np.array(next_move).reshape((len(next_move),4)) # Converting to numpy array
+
+        pieces = (board[next_move_array[:,0], next_move_array[:,1]]//10) # Type of pieces
+
+        # Pre-computing the features
+        ## Each move is represented by 3 features :
+        ##   - Direction : N, NE, NW, E, SE, S, SW, W. For bishop an equivalent representation is used based on the direction of the longuest part of the move (of distance 2) and the sens of the shortest part
+        ##   - Distance : distance between start point and end, between 1 and 7, by convention it is set to 1 unless the action (see bellow) is straighforward
+        ##   - Action : type of move, we distinguish 5 types : straightforward (s) which is a standard move in one of the 8 direction, knight move (k) and unusual promote move (bishop, knight or rook
+        ## With theses 3 characteristic, we can get the move in the moves_matrice_ref, the move id correspond to the id registered in the moves_ref dictionnary
+        
+        difference = next_move_array[:, [0,1]]-next_move_array[:, [2,3]]
+        distance = np.sqrt(np.square(difference).sum(axis = 1)).round(2)
+        is_k = (distance == 2.24)
+        is_promote = ((pieces == 1) & (next_move_array[:,2] == promote_rank)).astype("int8")
+
+        # Getting move directions and sens
+        move_direction = (next_move_array[:, [0,1]] != next_move_array[:, [2,3]])
+        move_sens = np.sign(difference[:,[0,1]])
+        ## Conversion of knight move to std move
+        move_direction_k = (np.abs(difference[is_k]) == 2) \
+                            | ((np.abs(difference[is_k]) == 1) & (np.sign(difference[is_k]) == 1))
+        move_direction[is_k] = move_direction_k
+
+        # +
+        # Getting matrice indices
+        _move_direction_sens = move_sens*move_direction.astype("int")
+        _direction_matrice_indices = np.concatenate([
+            (_move_direction_sens > 0).astype("int"),
+            (_move_direction_sens < 0).astype("int")
+        ], axis = 1)
+
+        direction_indices = directions_matrice_ref[_direction_matrice_indices[:,0], _direction_matrice_indices[:,1], _direction_matrice_indices[:,2], _direction_matrice_indices[:,3]]-1
+        action_indices = (is_promote*pieces)+(1*is_k.astype("int8"))
+        is_s = (action_indices == 0).astype("int8")
+        distance_indices = (((is_s*distance)+(1-is_s))-1).astype("int")
+
+        # Getting moves coordonates
+        moves_id = moves_matrice_ref[distance_indices, direction_indices, action_indices]
+
+        moves_matrice = np.zeros((8,8,len(moves_ref)))
+        
+        moves_matrice[
+            next_move_array[:,0],
+            next_move_array[:,1],
+            moves_id
+        ] = 1
+        
+        return moves_id, moves_matrice
     
     def _getNextMove (self, board, player, ignore_check = False, opponentNextMoves = None, depth = 1):
         """
@@ -386,7 +550,7 @@ class playChess ():
             player_position_concat = np.concatenate(player_position, axis = 1)
             moves_positions = move_np[[2,3],:]
             overlapping_player = np.where((moves_positions[:,None].T == player_position_concat.T).all(axis=2))[0]
-            moves = np_delete(move_np, overlapping_player, axis = 1)
+            moves = _np_delete(move_np, overlapping_player, axis = 1)
         else:
             return move_np
     
@@ -427,17 +591,16 @@ class playChess ():
 
         ## Identification of overlapping
         overlapping_player = np.where((npos_1range[:,None].T == player_position_concat.T).all(axis=2))[0]
+        
         ## Selection of pion for 2 range
-        wp_2range_filter = wp[0] == initial_position
+        wp_2range_filter = (wp[0] == initial_position)
         wp_2range_filter[overlapping_player] = False
-        wp_2range = wp[:,wp[0] == wp_2range_filter] # Get the player positions which can make two moves
-        
-        
+        wp_2range = wp[:, (wp[0] == initial_position) == wp_2range_filter] # Get the player positions which can make two moves
+            
         npos_2range = np.stack([
-            wp_2range[0,:]+2*direction,
+            wp_2range[0,:]+(2*direction),
             wp_2range[1,:]    
         ]) # Position for moves of 2 range
-        
         npos = np.concatenate([npos_1range, npos_2range], axis = 1)
         
         moves = np.concatenate([
@@ -447,8 +610,7 @@ class playChess ():
         
         ## Need to remove position in which there is an opponent
         collisions = np.where((all_opponents[:,None].T == npos.T).all(axis=2))[1]
-        #moves = np.delete(moves, collisions, axis = 1)
-        moves = np_delete(moves, collisions, axis = 1)
+        moves = _np_delete(moves, collisions, axis = 1)
         
         # 2. Computing diagonal moves
         all_diagonal = np.stack([
@@ -526,7 +688,7 @@ class playChess ():
                 # For overlapping player, we disable the move
                 temp_pos = np.copy(new_pos)
                 if (len(overlapping_player) > 0):
-                    temp_pos = np_delete(temp_pos, overlapping_player, axis = 0)
+                    temp_pos = _np_delete(temp_pos, overlapping_player, axis = 0)
 
                 # Storing the positions
                 if len(temp_pos) > 0:
@@ -542,7 +704,7 @@ class playChess ():
                 directions[np.where(directions == True)[0][overlapping]] = False ## In directions
                 ## In positions
                 if (len(overlapping) > 0):
-                    new_pos = np_delete(new_pos, overlapping, axis = 0)
+                    new_pos = _np_delete(new_pos, overlapping, axis = 0)
                     
                 # We stop after 8 moves
                 if n_move == 8:
@@ -868,7 +1030,7 @@ class playChess ():
         
         # 6. Evaluate if there is a winner
         ## Get next moves
-        self.nextMoves = self._getCurrentNextMove()
+        self.nextMoves = self.getCurrentNextMove()
         self.opponentNextMoves = self._getOpponentsCurrentNextMove()
         
         ## Checking if in check
