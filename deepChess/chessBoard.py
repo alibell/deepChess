@@ -15,6 +15,7 @@ from functools import reduce
 from operator import add
 import string
 import math
+import copy
 
 
 # +
@@ -214,10 +215,16 @@ class playChess ():
         ## State of the game
         self.mate = False # Play until is a mate
         self.winner = None
+        
+        ## Board hash : count every board configure except for initial position that cannot be repeted
+        self._board_hash_history = {}
+
+        ## Memorize the absence of progress
+        self._no_progress = 0
 
         ## Sending it to board history
         self._memorize_board(self.board)
-        
+                
         ## Pre-compute next moves
         self.nextMoves = self.getCurrentNextMove()
     
@@ -883,6 +890,83 @@ class playChess ():
         
         pass
     
+    def _board_to_NN_input(self, board_layers, turn, player, hash_history, not_moved, no_progress):
+        """
+            Given an game configuration, it generate the input for the Neural Network. The input is composed of :
+                A stack of matrice for pieces positions
+                A vector for additional information : player, the turn, the number of repetitions, the number of castling, the number of move without progress
+            Input :
+                board_layers : list of layers of the board to analyse
+                turn : int, number of turn
+                player : int, identifiant of the player, 0 or 1
+                hash_history : dict, dictionnary containing the hash of all position and the number of occurrence
+                not_move : dict, dictionnary containing the move situation pour roque related pieces
+                no_progress : int, number of moves without any progress (eaten piece)
+            Output :
+                board_layers_for_nn : numpy stack of matrice representing the location of all the pieces during the last turns
+                features_for_nn : vector of features containing the scalar features
+        """
+        
+        n_layers = 8 # Number of layers to include in the layer representation of the board
+        king_row = {
+            0:7,
+            1:0
+        } # Row containing the king, for analyze of the not moved pieces
+
+        n_hash_history = len(hash_history.values())
+        if n_hash_history > 0:
+            repeats = copy.deepcopy(list(hash_history.values()))
+            repeats.sort(reverse = True)
+
+            n_repeat = repeats[0:5]
+            if (len(n_repeat) < 5):
+                for i in range(5-len(n_repeat)):
+                    n_repeat.append(0)
+        else:
+            n_repeat = [0 for i in range(5)]
+
+        # Positions layers
+        board_layers = [np.stack(x) for x in board_layers]
+        board_layers_for_nn = board_layers[-n_layers:-1]+[board_layers[-1]]
+
+        l_board_layers = len(board_layers_for_nn)
+        if l_board_layers < 8:
+            missing_layers = 8-l_board_layers
+            board_layers_for_nn += [np.zeros(board_layers_for_nn[-1].shape, dtype = "int8") for i in range(missing_layers)]
+        board_layers_for_nn = np.concatenate(board_layers_for_nn)
+
+        # Scalar features
+        castling = []
+        for i in [0,1]:
+            if [king_row[i],4] in not_moved[i]:
+                castling.append(len(not_moved[i])-1)
+
+        features_for_nn = [player, turn, *n_repeat, *castling, no_progress] 
+        
+        return board_layers_for_nn, features_for_nn
+    
+    def current_board_to_NN_input(self):
+        """
+            Given an game configuration, it generate the input for the Neural Network. The input is composed of :
+                A stack of matrice for pieces positions
+                A vector for additional information : player, the turn, the number of repetitions, the number of castling, the number of move without progress
+            Input :
+                None
+            Output :
+                board_layers_for_nn : numpy stack of matrice representing the location of all the pieces during the last turns
+                features_for_nn : vector of features containing the scalar features
+        """
+
+        board_layers = self.board_layers_history
+        turn = self.turn
+        player = self.current_player
+        not_moved = self._not_moved
+        no_progress = self._no_progress
+        hash_history = self._board_hash_history
+
+        res = self._board_to_NN_input(board_layers, turn, player, hash_history, not_moved, no_progress)
+        return res
+    
     ###
     # Ensemble of methods to play
     ###
@@ -1000,7 +1084,8 @@ class playChess ():
                     2. Play the move
                     3. Storing and recomputing the new state
                     4. Update the player and eventually the turn
-                    5. Evaluate if there is a winner
+                    5. Compute the number of same board configuration
+                    6. Evaluate if there is a winner or a draw
                     
                 Input :
                     Move : format [[x_source,y_source], [x_target, y_targer]]
@@ -1017,18 +1102,33 @@ class playChess ():
             raiseException("incorrect_move")
         
         # 2. Play the move
-        board_copy = self._apply_move(move, self.board, real = True, promotion = promotion)
+        # board_copy = self._apply_move(move, self.board, real = True, promotion = promotion) # don't know why it is here, maybe I should remove it
         self.board = self._apply_move(move, self.board, real = True, promotion = promotion)
 
-        # 4. Storing and recomputing the new state
+        # 3. Storing and recomputing the new state
         self._memorize_board(self.board)
         
-        # 5. Update the player and eventually the turn
+        # 4. Update the player and eventually the turn
         self.current_player = 1-self.current_player
+        
         if self.current_player != 0:
             self.turn += 1
+            
+        ## Update the no progress counter
+        if (self.board_history[-2] != 0).sum() == (self.board_history[-1] != 0).sum():
+            self._no_progress += 1
+        else:
+            self._no_progress = 0
+        
+        # 5. Count the number of repetition of each board configuration
+        _board_hash = hash(self.board.flatten().tostring())
+        if _board_hash in self._board_hash_history.keys():
+            self._board_hash_history[_board_hash] += 1
+        else:
+            self._board_hash_history[_board_hash] = 1
         
         # 6. Evaluate if there is a winner
+        
         ## Get next moves
         self.nextMoves = self.getCurrentNextMove()
         self.opponentNextMoves = self._getOpponentsCurrentNextMove()
@@ -1038,7 +1138,9 @@ class playChess ():
         if (self.check):
             self.mate = self.is_mate()
             self.winner = 1-self.current_player
-        
+            
+        ## Check if in draw
+                
         pass
     
     
