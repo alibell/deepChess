@@ -153,8 +153,9 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# Ignoring logs folder
+# Ignoring logs and models folder
 logs/
+models/
 
 # End of https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks
 

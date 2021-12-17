@@ -231,6 +231,9 @@ class deepChessNN (Module):
         # Register the loss
         self.losses.append(loss)
         
+        # Only keeping 5 000 losses
+        self.losses = self.losses[-5000:-1]+[self.losses[-1]]
+        
         # Send the loss to tensorboard
         self.writer.add_scalar(
             "/".join([self.nn_tb_tag, "loss"]),
@@ -302,7 +305,14 @@ class deepChessNN (Module):
         # Gradient descent
         self.optimizer.step()
         
-    def predict(x):
+    def predict(self, x):
+        
+        """
+            Prediction
+            
+            Input : 
+                x : tuple containing the board matrice x[0] and the features x[0]
+        """
         
         # Prediction
         
@@ -310,3 +320,48 @@ class deepChessNN (Module):
             y_hat = self.forward(x)
             
         return y_hat
+    
+    def save(self, path):
+        """
+            Save a serialized version of the model
+            
+            Input : 
+                path : path where to save the file
+            Output : None
+        """
+        
+        state = {
+            'state_dict': self.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'losses': self.losses,
+            'tb_dir': self.writer.get_logdir()
+        }
+        
+        torch.save(state, path)
+    
+
+def load(path, tensorboard_dir = None):
+    
+    """
+        Load a saved moed
+        
+        Input :
+            path : path of the saved model
+            tensorboard_dir : path of the log dir, if not specified, the original log dir is keeped
+    """
+    
+    # Load the model
+    state = torch.load(path)
+    
+    # Get log dir
+    if tensorboard_dir is None:
+        tensorboard_dir = state["tb_dir"]
+    
+    # Instanciate the NN
+    model = deepChessNN(tensorboard_dir=tensorboard_dir)
+    
+    # Setting the parameters back
+    model.load_state_dict(state['state_dict'])
+    model.optimizer.load_state_dict(state['optimizer'])
+    
+    return model
