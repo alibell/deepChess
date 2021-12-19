@@ -12,8 +12,8 @@ error_dictionary = {
     "invalid_k_player":"The k parameter should be between 0 and 1."
 }
 
-def raiseException(exception_code):
+def raiseException(exception_code, parameter = ""):
     if exception_code in error_dictionary.keys():
-        raise Exception(error_dictionary[exception_code]) 
+        raise Exception(f"{error_dictionary[exception_code]} - {parameter}") 
     else:
         raise Exception(error_dictionary["missing_exception"]) 

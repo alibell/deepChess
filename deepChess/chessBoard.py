@@ -227,6 +227,7 @@ class playChess ():
         self._memorize_board(self.board)
                 
         ## Pre-compute next moves
+        self.opponentNextMoves = self._getOpponentsCurrentNextMove()
         self.nextMoves = self.getCurrentNextMove()
     
     ###
@@ -289,7 +290,7 @@ class playChess ():
                      Each move is composed of a list of source coordonates and target coordonates
         """
         
-        moves = self._getNextMove(self.board, self.current_player, previousMove=self.previousMove)
+        moves = self._getNextMove(self.board, self.current_player, previousMove=self.previousMove, opponentNextMoves=self.opponentNextMoves, ignore_check=False, depth=1)
         moves_list = reduce(add, list(moves.values()))
         
         return moves_list
@@ -303,9 +304,7 @@ class playChess ():
                 moves_matrice : matrice of 8x8x73, where the 8x8 plane represente each movable piece and the 73 dimension represention each possible move, as used in the representation of the moves in the neural network
         """
         
-        moves = self._getNextMove(self.board, self.current_player, previousMove=self.previousMove)
-        moves_list = reduce(add, list(moves.values()))
-        
+        moves_list = self.getCurrentNextMove()
         nn_moves = self._localToNNMove(moves_list, self.board, self.current_player)
         
         return moves_list, nn_moves[1], nn_moves[0]
@@ -435,7 +434,7 @@ class playChess ():
         distance_indices = (((is_s*distance)+(1-is_s))-1).astype("int")
 
         # Getting moves coordonates
-        moves_id = moves_matrice_ref[distance_indices, direction_indices, action_indices]
+        moves_id = moves_matrice_ref[distance_indices, direction_indices, action_indices]-1
 
         moves_matrice = np.zeros((8,8,len(moves_ref)))
         
@@ -447,7 +446,7 @@ class playChess ():
         
         return moves_id, moves_matrice
     
-    def _getNextMove (self, board, player, ignore_check = False, opponentNextMoves = None, previousMove = None, depth = 1):
+    def _getNextMove (self, board, player, ignore_check = False, opponentNextMoves = None, previousMove = None, depth = 1, alwaysDiag = False):
         """
             For a given board, given turn and given player
             Return the ensemble of possible moves
@@ -459,6 +458,7 @@ class playChess ():
                 opponentNextMoves : list of opponentNextMoves [useful to compute it only once when verifying if in check]
                 previousMove : array of the previous move, previous move needed to compute the "prise au passant", by default the game previous move is used
                 depth : int, depth of the function call, used to stop the loop with is_check call
+                alwaysDiag : by default False, if true, the pion diagonal is always possible (use for fast checking of king check). By extension, is disable the remove collision filter.
                 
             Output :
                 move_layers : a list of possible move for each layer
@@ -478,11 +478,11 @@ class playChess ():
         
         if ignore_check == False:
             ## Creating the fake board for fast cheacking
-            opponentBoard = board.copy() # Board with only the opponent and the king, see below in the check verification
-            opponentBoard[(np.mod(opponentBoard, 10) == player) | (opponentBoard != (60+player))] = 0
+            opponentBoard = board.copy() # Board with only the opponent pieces and the king, see below in the check verification
+            opponentBoard[(np.mod(opponentBoard, 10) == (player)) & ((opponentBoard // 10) != 6)] = 0
+            opponentNextMoves_noPlayer = self._getNextMove(board = opponentBoard, player = 1-player, previousMove = previousMove, opponentNextMoves = [], ignore_check = True, alwaysDiag = True)
+            opponentNextMoves_noPlayer = reduce(add, list(opponentNextMoves_noPlayer.values()))
 
-            opponentNextMoves_noPlayer = self._getNextMove(opponentBoard, player, previousMove = previousMove, ignore_check = True)
-            
             ## Depth increment
             depth += 1
         
@@ -505,11 +505,12 @@ class playChess ():
             5:self._getKingMoves,
             6:self._getRoqueMoves
         }
-        
         for i in range(7):
             if move_functions[i] is not None:
-
-                moves_function = move_functions[i](player_position, opponent_position, previousMove, player)
+                if i == 6:
+                    moves_function = move_functions[i](player_position = player_position, opponent_position = opponent_position, previousMove = previousMove, player = player, opponentNextMoves = opponentNextMoves) # We need the opponentNextMoves here
+                else:
+                    moves_function = move_functions[i](player_position = player_position, opponent_position = opponent_position, previousMove = previousMove, player = player, alwaysDiag = alwaysDiag) # We need the opponentNextMoves here
 
                 if len(moves_function) != 0:
                     temp_move = moves_function.T.reshape(moves_function.shape[1], 2, 2)
@@ -521,19 +522,19 @@ class playChess ():
                         move_mask = []
                         for current_temp_move in temp_move:
                             temp_board = self._apply_move(current_temp_move, board) # Applying the move to the board
-                            move_check = self._is_check(temp_board, player, opponentNextMoves = opponentNextMoves, previousMove = previousMove, depth = depth) # Fast checking
+                            move_check = self._is_check(board=temp_board, player=player, opponentNextMoves = opponentNextMoves_noPlayer, previousMove = previousMove, depth = depth) # Fast checking
 
                             if move_check == True:
-                                move_check = self._is_check(temp_board, player, previousMove = previousMove, depth = depth)
+                                move_check = self._is_check(board=temp_board, player=player, previousMove = previousMove, opponentNextMoves = None, depth = depth)
 
                             move_mask.append(
                                 (move_check == False)
                             ) # Storing in a mask if the move keep the player in check
 
-                        temp_move = temp_move[move_mask]                        
+                        temp_move = temp_move[move_mask]     
 
                     moves[i] = temp_move.tolist()
-    
+
         return moves
     
     def __removeOutOfBorderMoves (self, move_np):
@@ -584,7 +585,7 @@ class playChess ():
     
         return moves
     
-    def _getPionMove (self, player_position, opponent_position, previousMove, player):
+    def _getPionMove (self, player_position, opponent_position, previousMove, player, alwaysDiag = False):
         
         """
             Compute the pion move according to :
@@ -592,6 +593,7 @@ class playChess ():
                 Opponent position
                 Current player
                 Current turn
+                alwaysDiag : by default False, if true, the pion diagonal is always possible (use for fast checking of king check). By extension, is disable the remove collision filter.
                 
             Output : list of moves
         """
@@ -671,23 +673,30 @@ class playChess ():
             np.concatenate([wp[0,:]+direction*(1) for j in list([-1,1])]).flatten(),
             np.concatenate([wp[1,:]+j*(1) for j in list([-1,1])]).flatten()
         ])
-                
-        possible_moves = np.concatenate([
-                wp_repeat,
-                all_diagonal
-        ])[:,np.where((all_opponents[:,None].T == all_diagonal.T).all(axis=2))[1]]
         
+        if alwaysDiag == False:
+            possible_moves = np.concatenate([
+                    wp_repeat,
+                    all_diagonal
+            ])[:,np.where((all_opponents[:,None].T == all_diagonal.T).all(axis=2))[1]]
+        else:
+            possible_moves = np.concatenate([
+                    wp_repeat,
+                    all_diagonal
+            ])
+
         # 4. Mixing all together
         all_moves = [x for x in [moves, possible_moves, passant_moves] if x.shape[-1] != 0]
         if len(all_moves) > 0:
             moves = np.concatenate(all_moves, axis = 1)
         
         # Removing out of board moves
-        moves = self.__removeCollisionMoves(self.__removeOutOfBorderMoves(moves), player_position)
+        if alwaysDiag == False:
+            moves = self.__removeCollisionMoves(self.__removeOutOfBorderMoves(moves), player_position)
         
         return moves
     
-    def _getCavMoves (self,  player_position, opponent_position, previousMove, player):
+    def _getCavMoves (self,  player_position, opponent_position, previousMove, player, alwaysDiag):
         
         # Current position
         wp = player_position[1] # Get the player position
@@ -704,11 +713,12 @@ class playChess ():
             npos
         ])
         
-        moves = self.__removeCollisionMoves(self.__removeOutOfBorderMoves(moves), player_position)
+        if alwaysDiag == False:
+            moves = self.__removeCollisionMoves(self.__removeOutOfBorderMoves(moves), player_position)
         
         return moves
     
-    def _getLongRangeMoves (self, rule, wp, player_position, opponent_position, previousMove, player):
+    def _getLongRangeMoves (self, rule, wp, player_position, opponent_position, previousMove, player, alwaysDiag = False):
         
         """
             Genering function for long range moves
@@ -740,8 +750,9 @@ class playChess ():
 
                 # For overlapping player, we disable the move
                 temp_pos = np.copy(new_pos)
-                if (len(overlapping_player) > 0):
-                    temp_pos = _np_delete(temp_pos, overlapping_player, axis = 0)
+                if alwaysDiag == False:
+                    if (len(overlapping_player) > 0):
+                        temp_pos = _np_delete(temp_pos, overlapping_player, axis = 0)
 
                 # Storing the positions
                 if len(temp_pos) > 0:
@@ -752,12 +763,13 @@ class playChess ():
                     moves.append(new_move)
 
                 # We disable overlapping positions
-                overlapping = np.concatenate([overlapping_opponent, overlapping_player])
-                
-                directions[np.where(directions == True)[0][overlapping]] = False ## In directions
-                ## In positions
-                if (len(overlapping) > 0):
-                    new_pos = _np_delete(new_pos, overlapping, axis = 0)
+                if alwaysDiag == False:
+                    overlapping = np.concatenate([overlapping_opponent, overlapping_player])
+                    
+                    directions[np.where(directions == True)[0][overlapping]] = False ## In directions
+                    ## In positions
+                    if (len(overlapping) > 0):
+                        new_pos = _np_delete(new_pos, overlapping, axis = 0)
                     
                 # We stop after 8 moves
                 if n_move == 8:
@@ -768,32 +780,33 @@ class playChess ():
         
         if (len(moves) > 0):
             moves = np.concatenate(moves, axis = 1)
-            moves = self.__removeOutOfBorderMoves(moves)
+            if alwaysDiag == False:
+                moves = self.__removeOutOfBorderMoves(moves)
         
         return moves
         
-    def _getBishopMoves (self, player_position, opponent_position, previousMove, player):
+    def _getBishopMoves (self, player_position, opponent_position, previousMove, player, alwaysDiag = False):
         
         # Current position
         wp = player_position[2] # Get the player position
-        moves = self._getLongRangeMoves(self.bishop_move, wp ,player_position, opponent_position, previousMove, player)
+        moves = self._getLongRangeMoves(self.bishop_move, wp ,player_position, opponent_position, previousMove, player, alwaysDiag)
         
         return moves
  
-    def _getRookMoves (self,  player_position, opponent_position, previousMove, player):
+    def _getRookMoves (self,  player_position, opponent_position, previousMove, player, alwaysDiag = False):
         
         # Current position
         wp = player_position[3] # Get the player position
-        moves = self._getLongRangeMoves(self.rook_move, wp ,player_position, opponent_position, previousMove, player)
+        moves = self._getLongRangeMoves(self.rook_move, wp ,player_position, opponent_position, previousMove, player, alwaysDiag)
 
         return moves
     
-    def _getLadyMoves (self, player_position, opponent_position, previousMove, player):
+    def _getLadyMoves (self, player_position, opponent_position, previousMove, player, alwaysDiag = False):
         
         # Mix of Bishop and Rook, easy one
         wp = player_position[4] # Get the player position
-        bishop_moves = self._getLongRangeMoves(self.bishop_move, wp ,player_position, opponent_position, previousMove, player)
-        rook_moves = self._getLongRangeMoves(self.rook_move, wp ,player_position, opponent_position, previousMove, player)
+        bishop_moves = self._getLongRangeMoves(self.bishop_move, wp ,player_position, opponent_position, previousMove, player, alwaysDiag)
+        rook_moves = self._getLongRangeMoves(self.rook_move, wp ,player_position, opponent_position, previousMove, player, alwaysDiag)
         
         moves = []
         
@@ -806,7 +819,7 @@ class playChess ():
         
         return moves
     
-    def _getKingMoves (self, player_position, opponent_position, previousMove, player):
+    def _getKingMoves (self, player_position, opponent_position, previousMove, player, alwaysDiag = False):
         
         wp = player_position[5] # Get the player position
         moves = []
@@ -817,11 +830,12 @@ class playChess ():
                 self.king_move.T+wp
             ])
 
-            moves = self.__removeCollisionMoves(self.__removeOutOfBorderMoves(moves), player_position)
+            if alwaysDiag == False:
+                moves = self.__removeCollisionMoves(self.__removeOutOfBorderMoves(moves), player_position)
                         
         return moves
     
-    def _getRoqueMoves (self, player_position, opponent_position, previousMove, player):
+    def _getRoqueMoves (self, player_position, opponent_position, previousMove, player, opponentNextMoves):
         
         """
             Compute the roque move according to :
@@ -835,6 +849,11 @@ class playChess ():
         
         moves = []
         
+        if opponentNextMoves is not None:
+            opponentNextMoves = [x[1] for x in opponentNextMoves]
+        else:
+            opponentNextMoves = []
+
         all_positions = np.concatenate([
             np.concatenate(player_position, axis = 1),
             np.concatenate(opponent_position, axis = 1)
@@ -857,8 +876,12 @@ class playChess ():
             for position in position_to_check:
                 if (position[0] not in all_positions) and (position[1] not in all_positions):
                     allow_check_roque = True
-                    break
-        
+                    break       
+
+            ## Another fast check : not possible is the king is check 
+            if [y_pos,4] in opponentNextMoves:
+                allow_check_roque = False
+
         ## Full check
         if allow_check_roque == True:
             if 4 in not_moved:
@@ -879,11 +902,16 @@ class playChess ():
                             king_move = 4+2*direction
                             rook_move = tower-2*direction
                             intermediate_move = rook_move # Just to process to one implementation of the check
+
                         elif distance == 3: # Big roque
                             allow_roque = True
                             king_move = 4+2*direction
                             rook_move = tower-3*direction
                             intermediate_move = tower-(1*direction)
+
+                        # Checking if allowed
+                        if ([y_pos, rook_move] in opponentNextMoves) or ([y_pos, king_move] in opponentNextMoves):
+                            allow_roque = False
 
                         # Checking if the move is allowed
                         if allow_roque:
@@ -1158,7 +1186,7 @@ class playChess ():
         # 1. Check the move
         ## Getting possible moves
         if move not in self.nextMoves:
-            raiseException("incorrect_move")
+            raiseException("incorrect_move", move)
         piece = self.board[tuple(move[0])] 
         
         # 2. Play the move
@@ -1244,6 +1272,7 @@ class playChess ():
         """
         
         king_location = np.where(board == 60+player)
+        king_location = np.array(king_location)
         ignore_check = False
         
         # Compute it if not given
@@ -1252,9 +1281,9 @@ class playChess ():
                 ignore_check = True
             opponentNextMoves = self._getNextMove(board, 1-player, ignore_check = ignore_check, previousMove = previousMove, depth = depth)
             opponentNextMoves = reduce(add, list(opponentNextMoves.values())) # Set it to a list
-            
-        if len(king_location) > 0:
-            king_location = np.array(king_location).reshape(2).tolist()
+        
+        if (king_location.shape[1]) > 0:
+            king_location = king_location.reshape(2).tolist()
             check_situations = [True for x in opponentNextMoves if king_location == x[1]]
             is_check = len(check_situations) > 0
         else:
@@ -1271,7 +1300,7 @@ class playChess ():
             Output : boolean, true if check, false otherwise
         """
         
-        is_check = self._is_check(self.board, self.current_player, self.opponentNextMoves, self.previousMove)
+        is_check = self._is_check(board = self.board, player = self.current_player, opponentNextMoves = self.opponentNextMoves, previousMove =self.previousMove)
         
         return is_check
     
