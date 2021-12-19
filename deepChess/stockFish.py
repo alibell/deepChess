@@ -40,6 +40,26 @@ class stockFish_connector():
         ## Loading stockFish
         self.sf = Stockfish(stockFish_path, parameters = self.sf_parameters)
         
+    def get_top_moves (self, top_k = 5):
+        
+        """
+            A simple wrapper for SF get_top_moves functions
+            
+            Input :
+                Number of moves to get
+            Ouput :
+                Moves
+        """
+        
+        moves = self.sf.get_top_moves(top_k)
+        moves = [dict(zip(
+                ["move","promotion","information"],
+                [x["Move"][0:4].lower(), x["Move"][-1].lower() if x["Move"][-1].lower() in ["r","n","b","q"] else None, x["Mate"]]
+            ))
+            for x in moves]
+        
+        return moves
+        
     def _play_move (self, top_k = 5):
         '''
             Playing a move without any sanity check.
@@ -53,23 +73,13 @@ class stockFish_connector():
         '''
         
         # Getting the next move
-        moves = self.sf.get_top_moves(top_k)
+        moves = self.get_top_moves(top_k)
 
         # Getting the state and the move
         n_moves = len(moves)
         move_id = random.randint(0,n_moves-1)
         
-        next_move = {}
-
-        (new_move, is_mate) = (moves[move_id]["Move"], moves[move_id]["Mate"])
-        next_move["move"] = new_move[0:4]
-
-        if new_move[-1].lower() in ["r","n","b","q"]:
-            next_move["promotion"] = new_move[-1].lower()
-        else:
-            next_move["promotion"] = None
-
-        next_move["information"] = is_mate
+        new_move = moves[move_id]
 
         # Playing the move
         self.sf.make_moves_from_current_position([new_move])        
