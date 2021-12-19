@@ -365,3 +365,23 @@ def load(path, tensorboard_dir = None):
     model.optimizer.load_state_dict(state['optimizer'])
     
     return model
+
+torch_int = torch.int8
+torch_float = torch.float32
+
+def get_tensor(numpy_object, device = "cpu", dtype = torch_float):
+
+    """
+        Function to get a torch tensor from a numpy object
+            input :
+                numpy object : numpy object to convert to tensor
+                device : device in which the tensor will be stored (cpu or cuda)
+            ouput : 
+                tensor object
+    """
+
+    tensor = torch.tensor(numpy_object, dtype = dtype)
+    if device != 'cpu':
+        tensor = tensor.to(device)
+
+    return tensor

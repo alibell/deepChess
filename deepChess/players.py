@@ -8,14 +8,18 @@
 # -
 
 import random
+import numpy as np
 
 if __name__ == '__main__':
     from errors import raiseException
     from stockFish import stockFish_connector
+    from model import load, get_tensor
+    from chessBoard import moves_ref
 else:
     from .errors import raiseException
     from .stockFish import stockFish_connector
-
+    from .model import load, get_tensor
+    from .chessBoard import moves_ref
 
 class Player():
     """
@@ -61,6 +65,15 @@ class Player():
             
         else:
             pass
+
+    def get_fen_position(self, chess):
+        """
+            Get the sf position of the game according to the board
+
+            input : current chess game object
+        """
+
+        return chess.get_fen_position()
 
     def new_game(self):
 
@@ -309,3 +322,99 @@ class kStockFishPlayer(Player):
         if self.k > 0:
             self.sf.sf.set_position()
 
+    def get_fen_position(self, chess):
+        """
+            Get the sf position of the game according to the board
+            If in sf mode, the SF fen position is returned.
+            Otherwise, it is the chess game fen position.
+
+            input : current chess game object
+        """
+
+        if self.k > 0:
+            return self.sf.sf.get_fen_position()
+        else:
+            return chess.get_fen_position()
+
+class deepChessPlayer(Player):
+    
+    """
+        deepChess :
+            Player that play according to the deepChess policy.
+    """
+    
+    def __init__ (self, player_id, model, device = "cpu", keep_history = False):
+        
+        """
+            Initialization of the class
+            Input :
+                player_id : integer, 0 or 1, id of the player
+                model : path of the deepChess neural network model
+                device : device in which to load the model, by default the CPU
+                keep_history : it True, an history of the moves will be recorded
+        """
+        super(deepChessPlayer, self).__init__(player_id, keep_history)
+        
+        # Loading model
+        self.model = load(path = model)
+        self.model = self.model.to(device)
+
+        # Device
+        self.device = device
+
+        # History
+        if self.keep_history:
+            self.history["sf_moves"] = [] # Generated sf moves, None when random policy
+            self.history["sf_replicates"] = [] # Replicated sf moves
+
+        # Getting moves references in proper format
+        self._moves_ref = dict(zip(moves_ref.values(), moves_ref.keys()))
+        self._promote_dict = {
+            "K":2,
+            "B":3,
+            "R":4
+        }
+
+    def next_move (self, chess):
+        """
+            Get the next move according to a current chess game
+
+            Input :
+                chess : chess game object
+            Output :
+                move in chess format
+                promotion
+        """
+
+        # Loading the board in a NN compatible format
+        current_board = chess.current_board_to_NN_input()
+        current_board = tuple(get_tensor(np.array([x]), self.device) for x in current_board)
+
+        # Getting legal moves
+        legal_moves_local, legal_moves, legal_moves_id = chess.getCurrentNextMoveWithNN()
+        legal_moves_list = [tuple(x[0]+[y]) for x,y  in zip(legal_moves_local, legal_moves_id)] # The moves are converted to a list of tuples of coordinates in the moves matrice
+
+        # Getting the next moves
+        predictions = self.model.predict(current_board)
+        next_move_nn = predictions[1].reshape(legal_moves.shape)
+                
+        # Getting legal next moves
+        next_move_nn_legal = next_move_nn.cpu().numpy()*legal_moves
+        next_move_nn_legal = (next_move_nn_legal/next_move_nn_legal.sum()) # Normalized to 1
+
+        # Picking next move
+        next_moves_coordonates = np.where(next_move_nn_legal == next_move_nn_legal.max())
+        number_next_moves = len(next_moves_coordonates[0])
+        move_id = random.randint(0, number_next_moves-1)
+        next_move_coordonates = tuple(x[move_id] for x in next_moves_coordonates)
+
+        # Convert the next move to original one
+        next_move = legal_moves_local[legal_moves_list.index(next_move_coordonates)]
+
+        # Getting promotion
+        promotion = 5
+        next_move_action = self._moves_ref[next_move_coordonates[-1]].split("_")[0]
+        if next_move_action[0] == 'P':
+            promotion = self._promote_dict[next_move_action[1]] 
+
+        return next_move, promotion       

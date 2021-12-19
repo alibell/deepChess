@@ -308,7 +308,7 @@ class playChess ():
         
         nn_moves = self._localToNNMove(moves_list, self.board, self.current_player)
         
-        return moves_list, nn_moves[1]
+        return moves_list, nn_moves[1], nn_moves[0]
     
     def _getOpponentsCurrentNextMove (self):
         
@@ -986,6 +986,8 @@ class playChess ():
         for i in [0,1]:
             if [king_row[i],4] in not_moved[i]:
                 castling.append(len(not_moved[i])-1)
+            else:
+                castling.append(0)
 
         features_for_nn = [player, turn, *n_repeat, *castling, no_progress] 
         
