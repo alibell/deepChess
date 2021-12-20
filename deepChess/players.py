@@ -54,7 +54,6 @@ class Player():
             
             # playing the move
             chess.play_move(next_move[0], next_move[1])
-
             if self.keep_history:
                 self.history["moves"].append((next_move[0], next_move[1]))
             
@@ -103,6 +102,29 @@ class Player():
         """
             Custom function for new game configuration
         """
+
+        # Setting history to empty
+
+        self.history = {}
+        self.history["moves"] = []
+
+    def watch_game (self, chess):
+        """
+            Allow the current player to watch a game on a chess board and update it's internal state according to it
+
+            Input : chess game object
+        """
+
+        pass
+
+    def set_position (self, fen_position):
+        """
+            The player update its internal representation of a game according to a fen position string.
+
+            Input : str, fen representation of the current game
+        """
+
+        pass
 
 class kStockFishPlayer(Player):
     
@@ -186,22 +208,60 @@ class kStockFishPlayer(Player):
                         promotion
         """
         
+        # Getting next moves
+        next_moves = self.next_move_prob(chess)
+
+        # If not none
+        next_move = None
+        promotion = None
+        if next_moves[0] is not None:
+            move_id = random.randint(0, len(next_moves[0])-1)
+            next_move = next_moves[0][move_id]
+            promotion = next_moves[1][move_id]
+        
+        return (next_move, promotion)
+
+    def next_move_prob (self, chess):
+
+        """
+            Get the list of next move with its probability
+
+            Input :
+                current chess game object
+            Ouput :
+                list of moves
+                list of promotion
+                list of probability
+        """ 
+
         # Getting the policy
         policy_id = self._selectPolicy()
         policy = self.policies[policy_id]
-        
-        # Getting the next move
-        next_move = policy(chess)
-        promotion = 5
 
-        # If stockFish, we should convert the next move
-        if next_move is not None:
-            if policy_id == 1:
-                if next_move["promotion"] is not None:
-                    promotion = self.__promotions[next_move["promotion"]]
-                next_move = chess._stockFishToMove(next_move["move"], first_move=1-chess.first_player)
+        # Getting the next move
+        next_moves = policy(chess)
+        if next_moves is not None:
+            promotion = [5 for i in range(len(next_moves))]
+        else:
+            promotion = None
         
-        return (next_move, promotion)
+        # If stockFish, we should convert the next move
+        if policy_id == 1:
+            if next_moves is not None:
+                for i in range(len(next_moves)):
+                        if next_moves[i]["promotion"] is not None:
+                            promotion[i] = self.__promotions[next_moves[i]["promotion"]]
+                        next_moves[i] = chess._stockFishToMove(next_moves[i]["move"], first_move=1-chess.first_player)
+
+        # Getting probabilities
+        if next_moves is not None:
+            n_moves = len(next_moves)
+            prob = 1/n_moves
+            probabilities = [prob for i in range(n_moves)]
+        else:
+            probabilities = None
+
+        return next_moves, promotion, probabilities
     
     """
         Playing the move in the stockfish board
@@ -269,20 +329,14 @@ class kStockFishPlayer(Player):
         """
         
         if chess.current_player == self.player:
-            
             next_moves = chess.getCurrentNextMove()
-
-            n_moves = len(next_moves)
-            move = random.randint(0, n_moves-1)
-            
-            next_move = next_moves[move]
         else:
-            next_move = None
+            next_moves = None
 
         if self.keep_history:
             self.history["sf_moves"].append(None)
 
-        return next_move
+        return next_moves
     
     def _sfPolicy(self, chess):
         
@@ -295,19 +349,15 @@ class kStockFishPlayer(Player):
         # Checking that the chess signature is the same than SF one
         # @TODO, generate sf signature
         
-        if chess.current_player == self.player:
-            
+        if chess.current_player == self.player:      
             next_moves = self.sf.get_top_moves(5) # Picking one of the top 5 moves of SF
-            move = random.randint(0, (len(next_moves)-1))
-            
-            next_move = next_moves[move]
         else:
-            next_move = None
+            next_moves = None
 
         if self.keep_history:
-            self.history["sf_moves"].append(next_move)       
+            self.history["sf_moves"].append(next_moves)       
 
-        return next_move
+        return next_moves
 
     """
         New game : resetting the player to initial states
@@ -335,6 +385,26 @@ class kStockFishPlayer(Player):
             return self.sf.sf.get_fen_position()
         else:
             return chess.get_fen_position()
+
+    def watch_game (self, chess):
+        """
+            Allow the current player to watch a game on a chess board and update it's internal state according to it
+
+            Input : chess game object
+        """
+
+        self._play_move_preprocessing()
+        self._play_move_postprocessing()
+
+    def set_position (self, fen_position):
+        """
+            The player update its internal representation of a game according to a fen position string.
+
+            Input : str, fen representation of the current game
+        """
+
+        self.sf.sf.set_fen_position(fen_position)
+
 
 class deepChessPlayer(Player):
     
@@ -386,6 +456,48 @@ class deepChessPlayer(Player):
                 promotion
         """
 
+
+        # Getting next move probabilities
+        next_moves_prob = self.next_move_prob(chess)
+        
+        # Picking next move
+        move_id = np.argmax(next_moves_prob[2])
+        next_move = next_moves_prob[0][move_id]
+        promotion = next_moves_prob[1][move_id]
+    
+        return next_move, promotion      
+
+    def next_move_prob (self, chess):
+
+        """
+            Get the list of next move with its probability
+
+            Input :
+                current chess game object
+            Ouput :
+                list of moves
+                list of promotion
+                list of probability
+        """ 
+
+        next_moves, promotion, next_moves_prob, _ = self.next_move_prob_with_reward(chess)
+
+        return next_moves, promotion, next_moves_prob
+
+    def next_move_prob_with_reward (self, chess):
+
+        """
+            Get the list of next move with its probability and its reward
+
+            Input :
+                current chess game object
+            Ouput :
+                list of moves
+                list of promotion
+                list of probability
+                reward value
+        """ 
+
         # Loading the board in a NN compatible format
         current_board = chess.current_board_to_NN_input()
         current_board = tuple(get_tensor(np.array([x]), self.device) for x in current_board)
@@ -397,24 +509,21 @@ class deepChessPlayer(Player):
         # Getting the next moves
         predictions = self.model.predict(current_board)
         next_move_nn = predictions[1].reshape(legal_moves.shape)
-                
+
         # Getting legal next moves
         next_move_nn_legal = next_move_nn.cpu().numpy()*legal_moves
         next_move_nn_legal = (next_move_nn_legal/next_move_nn_legal.sum()) # Normalized to 1
 
-        # Picking next move
-        next_moves_coordonates = np.where(next_move_nn_legal == next_move_nn_legal.max())
-        number_next_moves = len(next_moves_coordonates[0])
-        move_id = random.randint(0, number_next_moves-1)
-        next_move_coordonates = tuple(x[move_id] for x in next_moves_coordonates)
+        # Getting next moves probabilities
+        next_moves_coordonates = np.where(next_move_nn_legal != 0)
+        next_moves_index = [legal_moves_list.index(x) for x in tuple(zip(*next_moves_coordonates))]
 
         # Convert the next move to original one
-        next_move = legal_moves_local[legal_moves_list.index(next_move_coordonates)]
+        next_moves = np.array(legal_moves_local)[next_moves_index].tolist()
+        next_moves_prob = next_move_nn_legal[next_moves_coordonates]
 
         # Getting promotion
-        promotion = 5
-        next_move_action = self._moves_ref[next_move_coordonates[-1]].split("_")[0]
-        if next_move_action[0] == 'P':
-            promotion = self._promote_dict[next_move_action[1]] 
+        next_moves_action = [x.split("_")[0:2] for x in np.array(list(self._moves_ref.values()))[next_moves_coordonates[-1]]]
+        promotion = [self._promote_dict[x[1]]  if x[0] == 'P' else 5 for x in next_moves_action]
 
-        return next_move, promotion       
+        return next_moves, promotion, next_moves_prob, predictions[0]

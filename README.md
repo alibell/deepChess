@@ -33,6 +33,7 @@ The main purpuse of this development is to train the algorithm against stockFish
 
 - [Reinforcement Learning: An Introduction (Richard S. Sutton, Andrew G. Barto)](http://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf)
 - Original alpha zero article : [Mastering Chess and Shogi by Self-Play with a General Reinforcement Learning Algorithm (D. Silver and al.)](https://arxiv.org/abs/1712.01815)
+- Supplementary of another D. Silver and al. description of Alpha Zero, for technical implementation detail : [A general reinforcement learning algorithm that masters chess, shogi, and Go through self-play](https://www.science.org/doi/suppl/10.1126/science.aar6404/suppl_file/aar6404-silver-sm.pdf)
 - Insights about CNN architecture : [Move Evaluation in Go Using Deep Convolutional Neural Networks (Chris J. Maddison and al.)](https://arxiv.org/abs/1412.6564)
 - Insights for the moves reprensentation in neural network output : [How does the Alpha Zero's move encoding work?
   (ai.stackexchange.com)](https://ai.stackexchange.com/questions/27336/how-does-the-alpha-zeros-move-encoding-work)

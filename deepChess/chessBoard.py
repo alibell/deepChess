@@ -216,6 +216,7 @@ class playChess ():
         ## State of the game
         self.mate = False # Play until is a mate
         self.winner = None
+        self.draw = None
         
         ## Board hash : count every board configure except for initial position that cannot be repeted
         self._board_hash_history = {}
@@ -408,7 +409,8 @@ class playChess ():
         ## With theses 3 characteristic, we can get the move in the moves_matrice_ref, the move id correspond to the id registered in the moves_ref dictionnary
         
         difference = next_move_array[:, [0,1]]-next_move_array[:, [2,3]]
-        distance = np.sqrt(np.square(difference).sum(axis = 1)).round(2)
+        distance_raw = np.sqrt(np.square(difference).sum(axis = 1))
+        distance = distance_raw.round(2)
         is_k = (distance == 2.24)
         is_promote = ((pieces == 1) & (next_move_array[:,2] == promote_rank)).astype("int8")
 
@@ -419,6 +421,11 @@ class playChess ():
         move_direction_k = (np.abs(difference[is_k]) == 2) \
                             | ((np.abs(difference[is_k]) == 1) & (np.sign(difference[is_k]) == 1))
         move_direction[is_k] = move_direction_k
+
+        # Fix for diagonal distance : is the distance / rac(2) close to an natural number (10e-3 precision) ?
+        distance_diag_raw = distance_raw/np.sqrt(2)
+        diag_mask = distance_diag_raw.round(0).astype("int8") == distance_diag_raw.round(3)
+        distance[diag_mask] = distance_diag_raw.round(0).astype("int8")[diag_mask]
 
         # +
         # Getting matrice indices
@@ -1219,8 +1226,8 @@ class playChess ():
         # 6. Evaluate if there is a winner
         
         ## Get next moves
-        self.nextMoves = self.getCurrentNextMove()
         self.opponentNextMoves = self._getOpponentsCurrentNextMove()
+        self.nextMoves = self.getCurrentNextMove()
         
         ## Checking if in check
         self.check = self.is_check()
@@ -1229,6 +1236,7 @@ class playChess ():
             self.winner = 1-self.current_player
             
         ## Check if in draw
+        self.draw = self.is_draw()
                 
         pass
     
@@ -1340,7 +1348,7 @@ class playChess ():
 
         # Check the pieces in game
         if len(pieces) < 4:
-            for i in players_pieces:
+            for i in range(len(players_pieces)):
                 if players_pieces[i] == [6]: # If there is only the king
                     if players_pieces[1-i] in [[6, 3], [3,6], [6], [6,2], [2,6]]:
                         draws.append("dead")

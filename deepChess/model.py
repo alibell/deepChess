@@ -34,8 +34,8 @@ class rl_loss (Module):
         
         """
             Input :
-                x : tuple containing the board matrice x[0] and the features x[0]
-                y : tuple containing the current value function and the MTCS policy
+                y_true : tuple containing the current value function and the MTCS policy
+                y_hat : tuple containing the estimated value function and the estimated policy
                 parameters : coefficients of the neural network
                 
             Output : loss value
