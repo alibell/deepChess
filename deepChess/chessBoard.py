@@ -231,6 +231,11 @@ class playChess ():
         self.opponentNextMoves = self._getOpponentsCurrentNextMove()
         self.nextMoves = self.getCurrentNextMove()
     
+    def __repr__ (self):
+        print(self.get_board())
+
+        return 'Chess Board'
+
     ###
     ### Ensemble of functions for analyzing the chess board
     ###

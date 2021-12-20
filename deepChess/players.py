@@ -393,8 +393,7 @@ class kStockFishPlayer(Player):
             Input : chess game object
         """
 
-        self._play_move_preprocessing()
-        self._play_move_postprocessing()
+        self._play_move_preprocessing(chess, process_current_player = True)
 
     def set_position (self, fen_position):
         """
