@@ -444,6 +444,15 @@ class deepChessPlayer(Player):
             "R":4
         }
 
+    def update_model (self, model_path):
+        """
+            Dynamically update the model
+
+            Input : model path
+        """
+
+        self.model = load(path = model_path, device = self.device)
+
     def next_move (self, chess):
         """
             Get the next move according to a current chess game

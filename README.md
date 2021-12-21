@@ -37,9 +37,10 @@ This tool is composed of :
 
 ## Training the tool
 
-The deepChess tool is given with two python file script :
+The deepChess tool is given with three python file script :
 - selfPlay.py
 - trainNN.py
+- evaluation.py
 
 The two script can be run concurently.
 
@@ -92,6 +93,12 @@ The loss is implemented as described in [Mastering Chess and Shogi by Self-Play 
 
 Each game record is used for training the neural network and is seen a determined number of time by the network.  
 This number can be set in the `max_epoch` variable.
+
+### Evaluation
+
+Script that process to self play against a player.
+We configured it as a 0.1-stockFish player against a full neural network MCTS 5 search play (otherwise it would have been to slow).
+It record the performance of each game in a csv file.
 
 # References
 

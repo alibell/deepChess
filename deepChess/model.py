@@ -357,7 +357,7 @@ class deepChessNN (Module):
         torch.save(state, path)
     
 
-def load(path, tensorboard_dir = None):
+def load(path, device = "cpu", tensorboard_dir = None):
     
     """
         Load a saved moed
@@ -368,7 +368,7 @@ def load(path, tensorboard_dir = None):
     """
     
     # Load the model
-    state = torch.load(path)
+    state = torch.load(path, map_location = device)
     
     # Get log dir
     if tensorboard_dir is None:
@@ -376,6 +376,7 @@ def load(path, tensorboard_dir = None):
     
     # Instanciate the NN
     model = deepChessNN(tensorboard_dir=tensorboard_dir)
+    model.to(device)
     
     # Setting the parameters back
     model.load_state_dict(state['state_dict'])
@@ -415,7 +416,7 @@ def get_lastest_model (model_folder, k):
     """
     
     file_list = glob.glob(f"{model_folder}/*.pt")
-    file_name = [".".join(x.split("/")[-1].split(".")[0:-1]) for x in file_list]
+    file_name = [int(".".join(x.split("/")[-1].split(".")[0:-1])) for x in file_list]
     
     files = dict(zip(file_name, file_list))
     file_name.sort(reverse = True)
