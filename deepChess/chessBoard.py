@@ -1238,7 +1238,8 @@ class playChess ():
         self.check = self.is_check()
         if (self.check):
             self.mate = self.is_mate()
-            self.winner = 1-self.current_player
+            if self.mate:
+                self.winner = 1-self.current_player
             
         ## Check if in draw
         self.draw = self.is_draw()
