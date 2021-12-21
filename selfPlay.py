@@ -76,13 +76,15 @@ for i in range(n_games):
         chess = chessBoard.playChess()
         current_players[0].new_game()
         current_players[1].new_game()
+        current_players[11].new_game()
         
         while (((chess.draw is None) or (chess.draw[0] == False)) and (chess.winner is None)):
             if chess.current_player == 0:
                 move = mcts.next_move(chess, n_mtcs)
                 chess.play_move(move[0])
             elif chess.current_player == 1:
-                current_players[1].play_move(chess)
+                current_players[11].play_move(chess)
+                
     except Exception as e:
         print(f"Error occurence, game n°{i} aborded")
         print(f"Error code : {e}")
