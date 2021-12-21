@@ -7,13 +7,14 @@
 #
 # -
 
-from torch.nn import Conv2d, Module, ReLU, MaxPool2d, Flatten, Linear, Softmax, Sequential, utils
+from torch.nn import Conv2d, Module, ReLU, MaxPool2d, Flatten, Linear, Softmax, Sequential, utils, BatchNorm2d
 from torch.optim import Adam
 from torch import dtype
 from torch.utils.tensorboard import SummaryWriter
 import torch
 import random
 import datetime
+import glob
 
 class rl_loss (Module):
     
@@ -30,7 +31,7 @@ class rl_loss (Module):
         
         self.regularization = regularization
         
-    def forward (self, y_true, y_hat, parameters):
+    def forward (self, y_hat, y_true, parameters):
         
         """
             Input :
@@ -54,7 +55,7 @@ class rl_loss (Module):
     
 class deepChessNN (Module):
     
-    def __init__ (self, channels = 96, regularization = 0.01, lr = 0.001, betas = (0.9, 0.999), weight_decay = 0, tensorboard_dir = "./logs"):
+    def __init__ (self, channels = 96, regularization = 0.01, lr = 0.01, betas = (0.9, 0.999), weight_decay = 0, tensorboard_dir = "./logs"):
         
         """
             Initialization of the neural network
@@ -78,6 +79,10 @@ class deepChessNN (Module):
                 "padding":'same'
             },
             {
+                "module": BatchNorm2d,
+                "num_features":100
+            },
+            {
                 "module": ReLU
             },
             {
@@ -93,6 +98,10 @@ class deepChessNN (Module):
                 "padding":'same'
             },
             {
+                "module": BatchNorm2d,
+                "num_features":200
+            },
+            {
                 "module": ReLU
             },
             {
@@ -106,6 +115,10 @@ class deepChessNN (Module):
                 "kernel_size": (1,1),
                 "bias":True,
                 "padding":'same'
+            },
+            {
+                "module": BatchNorm2d,
+                "num_features":400
             },
             {
                 "module": Flatten
@@ -278,7 +291,7 @@ class deepChessNN (Module):
 
         return value_function, moves
     
-    def train (self, x, y):
+    def fit (self, x, y):
         
         """
             Forward pass
@@ -289,7 +302,9 @@ class deepChessNN (Module):
             Output :
                 tuple containing the value function and the next move probability distribution
         """
-        
+
+        self.train()
+
         # Zero grad
         self.optimizer.zero_grad()
         
@@ -316,6 +331,8 @@ class deepChessNN (Module):
         
         # Prediction
         
+        self.eval()
+
         with torch.no_grad():
             y_hat = self.forward(x)
             
@@ -385,3 +402,28 @@ def get_tensor(numpy_object, device = "cpu", dtype = torch_float):
         tensor = tensor.to(device)
 
     return tensor
+
+def get_lastest_model (model_folder, k):
+    """
+        get_lastest_model
+        Get the lastest model of a current folder
+        Input :
+            model_folder : str, path of the folder containing the models
+            k : number of models to get
+        Ouput :
+            path of the lastest models
+    """
+    
+    file_list = glob.glob(f"{model_folder}/*.pt")
+    file_name = [".".join(x.split("/")[-1].split(".")[0:-1]) for x in file_list]
+    
+    files = dict(zip(file_name, file_list))
+    file_name.sort(reverse = True)
+    
+    output = []
+    n_models = len(file_name)
+    for i in range(k):
+        if i < n_models:
+            output.append(files[file_name[i]])
+    
+    return output

@@ -75,7 +75,7 @@ class MCTS ():
         #
         # Loading the neural netword player
         #
-        
+        self.device = device
         self.playerModel = deepChessPlayer(player_id=0, model=model, device = device, keep_history=False)
         
         
@@ -111,6 +111,16 @@ class MCTS ():
         #
 
         self._actions = []
+
+    def update_model(self, model_path):
+        """
+            Update the neural network model
+
+            Input :
+                model_path
+        """
+
+        self.playerModel = deepChessPlayer(player_id=0, model=model_path, device = self.device, keep_history=False)
 
     def next_move(self, chess, n_simulations = 100):
         
@@ -330,11 +340,12 @@ class MCTS ():
 
         # Get vector representation of the chess board
         board_input = chess.current_board_to_NN_input()
+        board_matrix = chess.board
 
         # Get MCTS values - policies pair
         policies = [[self._actions[x[0]], x[1]["q"]] for x in self.sa_parameters[state_init].items()]
 
-        history = (board_input, policies)
+        history = (board_matrix, board_input, policies)
 
         # Saving the pickle file
         if self.game_history_path is not None:
