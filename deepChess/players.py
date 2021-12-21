@@ -15,13 +15,11 @@ if __name__ == '__main__':
     from stockFish import stockFish_connector
     from model import load, get_tensor
     from chessBoard import moves_ref
-    from MCTS import MCTS
 else:
     from .errors import raiseException
     from .stockFish import stockFish_connector
     from .model import load, get_tensor
     from .chessBoard import moves_ref
-    from .MCTS import MCTS
 
 class Player():
     """
@@ -528,69 +526,3 @@ class deepChessPlayer(Player):
         promotion = [self._promote_dict[x[1]]  if x[0] == 'P' else 5 for x in next_moves_action]
 
         return next_moves, promotion, next_moves_prob, predictions[0]
-
-class MCTSPlayer(Player):
-    
-    """
-        MCTSPlayer :
-            Player that play according to the MTCS policy.
-    """
-    
-    def __init__ (self, player_id, model, opponent, device = "cpu", n_simulation = 10, keep_history = False):
-        
-        """
-            Initialization of the class
-            Input :
-                player_id : integer, 0 or 1, id of the player
-                model : path of the deepChess neural network model
-                device : device in which to load the model, by default the CPU
-                n_simulation : number of simulation to perform in MCTS
-                opponent : player object of the opponent
-                keep_history : it True, an history of the moves will be recorded
-        """
-        super(MCTSPlayer, self).__init__(player_id, keep_history)
-        
-        self.model = load(path = model)
-        self.model = self.model.to(device)
-        
-        # Loading MCTS
-        self.mcts = MCTS(self.model, opponent, model, device = device, tensorboard_dir=None, game_history_path=None, game_id = None, log = False)
-        self.n_simulations = n_simulation
-
-        # Device
-        self.device = device
-
-    def next_move (self, chess):
-
-        """
-            Get the next move according to a current chess game
-
-            Input :
-                chess : chess game object
-            Output :
-                move in chess format
-                promotion
-        """
-
-        next_move = self.mcts.next_move(chess, self.n_simulations)
-        promotion = 5
-    
-        return next_move, promotion      
-
-    def next_move_prob (self, chess):
-
-        """
-            Get the list of next move with its probability
-
-            Input :
-                current chess game object
-            Ouput :
-                list of moves
-                list of promotion
-                list of probability
-        """ 
-
-        next_move = self.mcts.next_move(chess, n_simulations)
-        promotion = 5
-
-        return [next_move], [promotion], [1]

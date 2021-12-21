@@ -33,7 +33,6 @@ This tool is composed of :
 - A player class which can play chess with the current chess engine board according to their policy. There is actually 3 players :
   - kStockFish player, a player composed of random play and stockfish play. With this player, the next move is either pick randomly (with a probability 1-k) or played by stockFish (with a probability k)
   - deepChessPlayer : player which play according to the neural network policy exclusivelly
-  - mctsPlayer : player which play according to the MCTS policy
 - An MCTS class, which pick moves according to MCTS simulations back-propagation
 
 ## Training the tool
