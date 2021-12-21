@@ -79,14 +79,13 @@ while True:
         draw = chess.draw[0]
         date = datetime.datetime.strftime(datetime.datetime.now(), "%m-%d-%Y - %H:%m:%S")
         model_file = model_path.split("/")[-1]
-        
         print(f"End game - Winner : {winner} - Draw : {draw}")
+        
         with open(output_name,"a") as file:
             file.write(f"{i},{date},{model_file},{winner},{draw}")
+            file.write("\n")
 
     except Exception as e:
         print(f"Error occurence, game n°{i} aborded")
         print(f"Error code : {e}")
         pass
-
-
