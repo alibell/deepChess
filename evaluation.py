@@ -89,3 +89,5 @@ while True:
         print(f"Error occurence, game n°{i} aborded")
         print(f"Error code : {e}")
         pass
+
+

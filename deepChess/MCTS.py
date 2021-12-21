@@ -32,7 +32,7 @@ class MCTS ():
             Each action is identified by its hash
     """
     
-    def __init__ (self, player0, player1, model, device = "cpu", tensorboard_dir = "logs", game_history_path = None, game_id = None, log = False):
+    def __init__ (self, player0, player1, model, device = "cpu", tensorboard_dir = "logs", game_history_path = None, game_id = None, log = False, max_turn = 30):
         
         """
             Initialization of the MCTS search
@@ -47,6 +47,7 @@ class MCTS ():
                 game_id : id of the current game for tensorboard monitoring, otherwise it will be generated
                 log : boolean, true if we want the MCTS to log its activity in tensorboard
                 game_history_path : path where to store the games for neural network training, they are stored in a pickle file
+                max_turn : limit the number of turn in an MCTS search, otherwise it is too long on my poor computer
         """
         
         #
@@ -85,6 +86,7 @@ class MCTS ():
         
         self.player0 = player0
         self.player1 = player1
+        
 
         #
         # Storing the state-actions parameters
@@ -105,7 +107,8 @@ class MCTS ():
         self._pickle_count = 1
         self.c_base = 19652
         self.c_init = 1.25
-
+        self.max_turn = max_turn
+        
         #
         # Actions memory
         #
@@ -177,7 +180,7 @@ class MCTS ():
             
             # Playing the game
             # Playing the first move from deep nn policy
-            while ((chess_temp.draw is None) or (chess_temp.draw[0] == False)) and (chess_temp.winner is None):
+            while ((chess_temp.draw is None) or (chess_temp.draw[0] == False)) and (chess_temp.winner is None) and (chess_temp.turn <= self.max_turn):
                 try:
                     # Computing state hash
                     state = self._get_fen_position(chess_temp)
@@ -219,12 +222,15 @@ class MCTS ():
                     break
 
             # Back propagation
-            if chess_temp.draw[0]:
+            if chess_temp.turn <= self.max_turn:
                 reward = 0
-            elif chess_temp.winner == 0:
-                reward = 1
             else:
-                reward = -1
+                if chess_temp.draw[0]:
+                    reward = 0
+                elif chess_temp.winner == 0:
+                    reward = 1
+                else:
+                    reward = -1
 
             for sa in state_action:
                 self.sa_parameters[sa[0]][sa[1]]["w"] += reward
