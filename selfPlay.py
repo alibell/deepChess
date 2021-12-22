@@ -8,6 +8,7 @@
 # -
 
 from deepChess import chessBoard
+from deepChess.chessBoardFast import playChess
 from deepChess.model import get_lastest_model, load, deepChessNN
 from deepChess.players import kStockFishPlayer, deepChessPlayer
 from deepChess.MCTS import MCTS
@@ -26,6 +27,7 @@ data_folder = "/home/ali/deepChess/games"
 model_folder = "/home/ali/deepChess/models"
 log_folder = "/home/ali/deepChess/logs"
 device = "cuda:0"
+shallowBlue_path = "./binaries/shallowblue"
 stockFish_path = "../stockfish_14.1_linux_x64_avx2/stockfish_14.1_linux_x64_avx2"
 players = {
     0:{
@@ -56,7 +58,7 @@ current_players[11] = kStockFishPlayer(player_id=1, stockFish_path=stockFish_pat
 # -
 
 # Getting model path
-model_path = get_lastest_model(model_folder, 1)[0]
+model_path = get_lastest_model(model_folder, 2)[1] # Not taking the last one, because it can be in writting
 
 # Generate run uid
 uid = random.randint(0, 10e6)
@@ -73,7 +75,7 @@ for i in range(n_games):
     
     try:
         print(f"Game n°{i}")
-        chess = chessBoard.playChess()
+        chess = playChess(shallowBlue_path)
         current_players[0].new_game()
         current_players[1].new_game()
         current_players[11].new_game()
@@ -89,5 +91,3 @@ for i in range(n_games):
         print(f"Error occurence, game n°{i} aborded")
         print(f"Error code : {e}")
         pass
-
-
