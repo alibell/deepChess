@@ -1208,6 +1208,7 @@ class playChess ():
         # 3. Storing and recomputing the new state
         self._memorize_board(self.board)
         self.previousMove = (self.current_player, move, piece) # Storing the previous move
+        self.fen = self.get_fen_position() # Record the fen position
         
         # 4. Update the player and eventually the turn
         self.current_player = 1-self.current_player
@@ -1456,6 +1457,10 @@ class playChess ():
     """
         Function to export the board
     """
+
+    def copy(self):
+
+        return copy.deepcopy(self)
 
     def get_fen_position(self):
 

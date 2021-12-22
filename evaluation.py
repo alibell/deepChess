@@ -8,6 +8,7 @@
 # -
 
 from deepChess import chessBoard
+from deepChess.chessBoardFast import playChess
 from deepChess.model import get_lastest_model, load, deepChessNN
 from deepChess.players import kStockFishPlayer, deepChessPlayer
 from deepChess.MCTS import MCTS
@@ -21,13 +22,14 @@ import datetime
 # -
 
 log_folder = "/home/ali/deepChess/evaluations" # For game log
-eval_name = "sf_10"
+eval_name = "sf_10_mcts10"
 model_folder = "/home/ali/deepChess/models"
 device = "cpu"
 stockFish_path = "../stockfish_14.1_linux_x64_avx2/stockfish_14.1_linux_x64_avx2"
+shallowBlue_path = "./binaries/shallowblue"
 opponent = kStockFishPlayer(1, k = 0.1, stockFish_path= stockFish_path)
 opponent_mcts = kStockFishPlayer(1, k = 0.1, stockFish_path= stockFish_path)
-n_mtcs = 5
+n_mtcs = 10
 
 # +
 #
@@ -62,7 +64,7 @@ while True:
         player0.update_model(model_path)
 
     try:
-        chess = chessBoard.playChess()
+        chess = playChess(shallowBlue_path)
         player0.new_game()
         opponent.new_game()
         opponent_mcts.new_game()
@@ -89,5 +91,3 @@ while True:
         print(f"Error occurence, game n°{i} aborded")
         print(f"Error code : {e}")
         pass
-
-

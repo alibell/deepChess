@@ -39,15 +39,12 @@ max_model = 100 # Maximum number of model record to keep
 # -
 
 # Getting the model to train
-model_path = get_lastest_model(model_folder, 1)[-1]
+model_path = get_lastest_model(model_folder, 1)[0]
 model = load(model_path)
 model = model.to(device)
 
 # Setting the learning rate
 model.optimizer.param_groups[0]['lr'] = lr
-
-# Getting the data for NN training
-games = glob.glob(data_folder+"/**/*.pickle", recursive=True)
 
 # Getting train history
 train_history_path = data_folder+"/history"
@@ -62,6 +59,9 @@ else:
 # -
 
 while True:
+    # Getting the data for NN training
+    games = glob.glob(data_folder+"/**/*.pickle", recursive=True)
+
     for game in games:
         if game not in history.keys():
             history[game] = 0

@@ -17,7 +17,6 @@ import os
 from numpy.core.fromnumeric import argmax
 from deepChess.players import deepChessPlayer
 from deepChess.chessBoard import playChess
-import copy
 from torch.utils.tensorboard import SummaryWriter
 
 class MCTS ():
@@ -170,7 +169,7 @@ class MCTS ():
         for i in range(n_simulations):
 
             # Copy of the game and getting the state fen representation
-            chess_temp = copy.deepcopy(chess)
+            chess_temp = chess.copy()
 
             # List of state actions for back propagation
             state_action = []
@@ -190,7 +189,10 @@ class MCTS ():
                     next_move_list_score = self._ucb_next_moves(state, actions, next_move_prob)
 
                     # Picking action
-                    move_id = np.argmax(next_move_list_score)
+                    if len(next_move_list_score) > 0:
+                        move_id = np.argmax(next_move_list_score)
+                    else:
+                        break
                     action = actions[move_id]
                     next_move = next_move_list[move_id]
                     promotion = next_move_promotion[move_id]
@@ -241,9 +243,15 @@ class MCTS ():
 
         # Getting the best move
         values = np.array([x["q"] for x in self.sa_parameters[state_init].values()])
-        best_move_id = np.argmax(values)
-        best_move = self._actions[list(self.sa_parameters[state_init].keys())[best_move_id]]
-        reward = values[best_move_id]
+        if len(values) > 0:
+            best_move_id = np.argmax(values)
+            best_move = self._actions[list(self.sa_parameters[state_init].keys())[best_move_id]]
+            reward = values[best_move_id]
+        else:
+            n_next_moves = len(next_move_list_init)
+            best_move_id = random.randint(0, n_next_moves-1)
+            best_move = next_move_list_init[best_move_id]
+            reward = 0
 
         # Storing game history
         if self.game_history_path is not None:

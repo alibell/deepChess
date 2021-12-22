@@ -215,9 +215,13 @@ class kStockFishPlayer(Player):
         next_move = None
         promotion = None
         if next_moves[0] is not None:
-            move_id = random.randint(0, len(next_moves[0])-1)
-            next_move = next_moves[0][move_id]
-            promotion = next_moves[1][move_id]
+            if len(next_moves[0]) > 0:
+                move_id = random.randint(0, len(next_moves[0])-1)
+                next_move = next_moves[0][move_id]
+                promotion = next_moves[1][move_id]
+            else:
+                next_move = None
+                promotion = 5
         
         return (next_move, promotion)
 
@@ -256,7 +260,10 @@ class kStockFishPlayer(Player):
         # Getting probabilities
         if next_moves is not None:
             n_moves = len(next_moves)
-            prob = 1/n_moves
+            if n_moves > 0:
+                prob = 1/n_moves
+            else:
+                prob = 1
             probabilities = [prob for i in range(n_moves)]
         else:
             probabilities = None
