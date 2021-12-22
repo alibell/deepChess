@@ -57,7 +57,7 @@ while True:
     print("Starting new play")
 
     # Get the lastest model
-    new_model_path = get_lastest_model(model_folder, 1)[0]
+    new_model_path = get_lastest_model(model_folder, 2)[1]
     if new_model_path != model_path:
         model_path = new_model_path
         mcts.update_model(model_path)
