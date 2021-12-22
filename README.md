@@ -34,6 +34,10 @@ This tool is composed of :
   - kStockFish player, a player composed of random play and stockfish play. With this player, the next move is either pick randomly (with a probability 1-k) or played by stockFish (with a probability k)
   - deepChessPlayer : player which play according to the neural network policy exclusivelly
 - An MCTS class, which pick moves according to MCTS simulations back-propagation
+  
+To accelerate the move calculation, a failover chessBoard, which has less functionality, was created in the chessBoardFast sub-library.  
+This chessboard is used for selfPlay and MCTS.  
+It use the open source [shallow-blue](https://github.com/GunshipPenguin/shallow-blue) software for which we are redistributing the compiled linux binary.
 
 ## Training the tool
 
@@ -61,7 +65,7 @@ The additional noise is to be added for a full implementation.
 Multiple selfplay can be run concurrently by execution the script a multiple number of time.
 
 We choosed a slightly difference approach than *D. Silver and al* on this point due to our lack of computational power :
-- We made smaller MTCS number of simulations : 100 instead of 800
+- We made smaller MTCS number of simulations : 20 instead of 800 (it needs too much computation)
 - The Player 1 and the Player 0 MCTS NMP where produced by respectively a 0.8-stockFish player and a 0.2-stockFish player. Our aim is to stimulate the discovery of interesting move and games at the beginning of the training
 - In a second time, we are aiming to train the algorithm from real selfPlay games : neural network player versus neural network player
 
@@ -97,7 +101,7 @@ This number can be set in the `max_epoch` variable.
 ### Evaluation
 
 Script that process to self play against a player.
-We configured it as a 0.1-stockFish player against a full neural network MCTS 5 search play (otherwise it would have been to slow).
+We configured it as a 0.1-stockFish player against a full neural network MCTS 1 search play (otherwise it would have been to slow).
 It record the performance of each game in a csv file.
 
 # References
@@ -109,3 +113,4 @@ It record the performance of each game in a csv file.
 - Insights for the moves reprensentation in neural network output : [How does the Alpha Zero's move encoding work?
   (ai.stackexchange.com)](https://ai.stackexchange.com/questions/27336/how-does-the-alpha-zeros-move-encoding-work)
 - [Stockfish project](https://stockfishchess.org/)
+- The shallow blue is an open-source UCI like chess engine in MIT license from Rhys Rustad-Elliott, it can be downloaded in the author github pages : [shallowBlue](https://github.com/GunshipPenguin/shallow-blue)
