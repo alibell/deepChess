@@ -39,7 +39,7 @@ n_mtcs = 10
 # -
 
 # Getting model path
-model_path = get_lastest_model(model_folder, 2)[0]
+model_path = get_lastest_model(model_folder, 2)[1]
 
 # Neural network model
 player0 = deepChessPlayer(0, device = device, model = model_path)
