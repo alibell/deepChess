@@ -216,8 +216,9 @@ class MCTS ():
 
                     # Get next move list
                     next_move_list, next_move_promotion, next_move_prob = self.player0.next_move_prob(chess_temp)
-                except:
+                except Exception as e:
                     # Break loop if there is a game error
+                    print(f"MCTS Exception : {e}")
                     if self.writer is not None:
                         self.writer.add_text(
                             self.mcts_tb_game_id+"/mtcs/run",
