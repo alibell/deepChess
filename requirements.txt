@@ -1,2 +1,4 @@
 stockfish
 numpy
+flask
+flask-cors
