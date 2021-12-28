@@ -27,9 +27,10 @@ model_folder = "/home/ali/deepChess/models"
 log_folder = "/home/ali/deepChess/logs"
 lr = 0.01 # Learning rate of the training
 device = "cuda:0" # Device in which the model is loaded
-timer = 60*10 # Timer in seconds before attempting again to train the network
+timer = 60*1 # Timer in seconds before attempting again to train the network
 max_epoch = 100 # Number of time it can has seen the same data
 max_model = 100 # Maximum number of model record to keep
+batch_size = 256 # Batch size
 
 # +
 #
@@ -39,7 +40,7 @@ max_model = 100 # Maximum number of model record to keep
 # -
 
 # Getting the model to train
-model_path = get_lastest_model(model_folder, 1)[0]
+model_path = get_lastest_model(model_folder, 2)[1]
 model = load(model_path)
 model = model.to(device)
 
@@ -61,49 +62,70 @@ else:
 while True:
     # Getting the data for NN training
     games = glob.glob(data_folder+"/**/*.pickle", recursive=True)
+    games = [x for x in games if (x in history.keys() and history[x] <= max_epoch) or (x not in history.keys())]
 
-    for game in games:
-        if game not in history.keys():
-            history[game] = 0
+    n_batch = len(games)//batch_size+int((len(games)%batch_size) != 0)
 
-        if history[game] < max_epoch:
-            print(f"Pass n°{history[game]+1} on {game}")
+    for batch in range(n_batch):
+        batch_games = games[batch*batch_size:(batch+1)*batch_size]
 
-            # Loading data
+        # Only keeping the last models
+        last_models = get_lastest_model(model_folder, max_model)
+        for model_to_delete in [x for x in glob.glob(model_folder+"/*.pt") if x not in last_models]:
+            os.remove(model_to_delete)
+
+        print(f"Passing batch - Batch size {batch_size}")
+
+        # Loading data
+        batch_tensor = {
+            "X":[],
+            "y":[]
+        }
+
+        for game in batch_games:
+
+            # Registering the game
+            if game not in history.keys():
+                history[game] = 0
+
             game_data = pickle.load(open(game, "br"))
             X = tuple(torch.tensor(x,dtype = torch.float32, device = device) for x in game_data[1])
             moves = [torch.tensor(
-                    playChess._localToNNMove(None, [x[0]], game_data[0], 0)[1], dtype = torch.float32, device = device).flatten()
-                         for x in game_data[2]]
+                        playChess._localToNNMove(None, [x[0]], game_data[0], 0)[1], dtype = torch.float32, device = device).flatten()
+                                for x in game_data[2]]
             rewards = [torch.tensor(x[1], dtype = torch.float32, device = device) for x in game_data[2]]
 
-            X = (
-                torch.stack([X[0] for x in range(len(moves))]),
-                torch.stack([X[1] for x in range(len(moves))])
-            )
-            y = (torch.stack(rewards), torch.stack(moves))
-
-            # Fitting the model
-            model.fit(X, y)
+            if len(moves) > 0:
+                X = (
+                    torch.stack([X[0] for x in range(len(moves))]),
+                    torch.stack([X[1] for x in range(len(moves))])
+                )
+                batch_tensor["X"].append(X)
+                y = (torch.stack(rewards), torch.stack(moves))
+                batch_tensor["y"].append(y)
 
             # Saving the fit in history
             history[game] += 1
 
-            # Saving the new model
-            next_model_path = "/".join([
-                model_folder,
-                str(int(".".join(model_path.split("/")[-1].split(".")[0:-1]))+1)
-            ])+".pt"
-            model_path = next_model_path
-            model.save(model_path)
+        # Fitting the model
+        if len(batch_tensor["X"]) > 0:
+            print("Training model")
 
-            # Saving the history
-            with open(train_history_path, "wb") as file:
-                pickle.dump(history, file)
+            X = (torch.concat([x[0] for x in batch_tensor["X"]]), torch.concat([x[1] for x in batch_tensor["X"]]))
+            y = (torch.concat([x[0] for x in batch_tensor["y"]]), torch.concat([x[1] for x in batch_tensor["y"]]))
+
+            model.fit(X, y)
+
+        # Saving the new model
+        next_model_path = "/".join([
+            model_folder,
+            str(int(".".join(model_path.split("/")[-1].split(".")[0:-1]))+1)
+        ])+".pt"
+        model_path = next_model_path
+        model.save(model_path)
+
+        # Saving the history
+        with open(train_history_path, "wb") as file:
+            pickle.dump(history, file)
     
-    # Only keeping the last models
-    last_models = get_lastest_model(model_folder, max_model)
-    for model_to_delete in [x for x in glob.glob(model_folder+"/*.pt") if x not in last_models]:
-        os.remove(model_to_delete)
-
     time.sleep(timer)

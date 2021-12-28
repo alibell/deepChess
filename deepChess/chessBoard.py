@@ -311,8 +311,10 @@ class playChess ():
         """
         
         moves_list = self.getCurrentNextMove()
-        nn_moves = self._localToNNMove(moves_list, self.board, self.current_player)
-        
+        if len(moves_list) > 0:
+            nn_moves = self._localToNNMove(moves_list, self.board, self.current_player)
+        else:
+            nn_moves = [], []
         return moves_list, nn_moves[1], nn_moves[0]
     
     def _getOpponentsCurrentNextMove (self):

@@ -31,7 +31,7 @@ class MCTS ():
             Each action is identified by its hash
     """
     
-    def __init__ (self, player0, player1, model, device = "cpu", tensorboard_dir = "logs", game_history_path = None, game_id = None, log = False, max_turn = 30):
+    def __init__ (self, player0, player1, model, device = "cpu", tensorboard_dir = "logs", game_history_path = None, game_id = None, log = False, max_turn = 30, mcts_player = 0):
         
         """
             Initialization of the MCTS search
@@ -47,6 +47,7 @@ class MCTS ():
                 log : boolean, true if we want the MCTS to log its activity in tensorboard
                 game_history_path : path where to store the games for neural network training, they are stored in a pickle file
                 max_turn : limit the number of turn in an MCTS search, otherwise it is too long on my poor computer
+                mcts_player : player of the MCTS, by default 0
         """
         
         #
@@ -73,10 +74,10 @@ class MCTS ():
             self.writer = None
         
         #
-        # Loading the neural netword player
+        # Loading the neural network player
         #
         self.device = device
-        self.playerModel = deepChessPlayer(player_id=0, model=model, device = device, keep_history=False)
+        self.playerModel = deepChessPlayer(player_id=mcts_player, model=model, device = device, keep_history=False)
         
         
         #
@@ -85,6 +86,7 @@ class MCTS ():
         
         self.player0 = player0
         self.player1 = player1
+        self.mcts_player = mcts_player
         
 
         #
@@ -143,7 +145,7 @@ class MCTS ():
         """
 
         # Not valid if the current player is not player 0
-        if chess.current_player == 1:
+        if chess.current_player != self.mcts_player:
             return None
 
         if self.writer is not None:
@@ -224,19 +226,19 @@ class MCTS ():
                     break
 
             # Back propagation
-            if chess_temp.turn <= self.max_turn:
+            if chess_temp.draw[0]:
                 reward = 0
+            elif chess_temp.winner == 0:
+                reward = 1
             else:
-                if chess_temp.draw[0]:
-                    reward = 0
-                elif chess_temp.winner == 0:
-                    reward = 1
-                else:
-                    reward = -1
+                reward = -1
 
             for sa in state_action:
                 self.sa_parameters[sa[0]][sa[1]]["w"] += reward
-                self.sa_parameters[sa[0]][sa[1]]["q"] = self.sa_parameters[sa[0]][sa[1]]["w"]/self.sa_parameters[sa[0]][sa[1]]["n"]
+                if self.sa_parameters[sa[0]][sa[1]]["n"] > 0:
+                    self.sa_parameters[sa[0]][sa[1]]["q"] = self.sa_parameters[sa[0]][sa[1]]["w"]/self.sa_parameters[sa[0]][sa[1]]["n"]
+                else:
+                    self.sa_parameters[sa[0]][sa[1]]["q"] = 0
             
             # Reinitialisation of the moves
             next_move_list, next_move_promotion, next_move_prob = next_move_list_init, next_move_promotion_init, next_move_prob_init 
@@ -254,8 +256,9 @@ class MCTS ():
             reward = 0
 
         # Storing game history
-        if self.game_history_path is not None:
-            self._save_game_history(state_init, chess)
+        if len(values) > 0:
+            if self.game_history_path is not None:
+                self._save_game_history(state_init, chess)
 
         if self.writer is not None:
             self.writer.add_text(
@@ -358,6 +361,8 @@ class MCTS ():
 
         # Get MCTS values - policies pair
         policies = [[self._actions[x[0]], x[1]["q"]] for x in self.sa_parameters[state_init].items()]
+        policies_q = [x[1] for x in policies]
+        policies = [x for x in policies if x[1] == max(policies_q)]
 
         history = (board_matrix, board_input, policies)
 

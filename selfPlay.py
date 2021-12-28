@@ -39,7 +39,7 @@ players = {
         'keep_history':False
     }
 }
-n_mtcs = 100
+n_mtcs = 200
 n_games = 100
 
 # +
@@ -58,7 +58,7 @@ current_players[11] = kStockFishPlayer(player_id=1, stockFish_path=stockFish_pat
 # -
 
 # Getting model path
-model_path = get_lastest_model(model_folder, 2)[1] # Not taking the last one, because it can be in writting
+model_path = get_lastest_model(model_folder, 5)[4] # Not taking the last one, because it can be in writting
 
 # Generate run uid
 uid = random.randint(0, 10e6)
@@ -68,7 +68,7 @@ mcts = MCTS(current_players[0], current_players[1], model_path, device = device,
 
 for i in range(n_games):
     # Get the lastest model
-    new_model_path = get_lastest_model(model_folder, 1)[0]
+    new_model_path = get_lastest_model(model_folder, 5)[4]
     if new_model_path != model_path:
         model_path = new_model_path
         mcts.update_model(model_path)
@@ -91,3 +91,5 @@ for i in range(n_games):
         print(f"Error occurence, game n°{i} aborded")
         print(f"Error code : {e}")
         pass
+
+
