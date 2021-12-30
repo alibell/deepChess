@@ -31,7 +31,7 @@ class MCTS ():
             Each action is identified by its hash
     """
     
-    def __init__ (self, player0, player1, model, device = "cpu", tensorboard_dir = "logs", game_history_path = None, game_id = None, log = False, max_turn = 30, mcts_player = 0):
+    def __init__ (self, player0, player1, model, device = "cpu", tensorboard_dir = "logs", game_history_path = None, game_id = None, log = False, max_turn = 30, mcts_player = 0, dir_noise = 0.3, exploration_prop = 0.25):
         
         """
             Initialization of the MCTS search
@@ -48,6 +48,8 @@ class MCTS ():
                 game_history_path : path where to store the games for neural network training, they are stored in a pickle file
                 max_turn : limit the number of turn in an MCTS search, otherwise it is too long on my poor computer
                 mcts_player : player of the MCTS, by default 0
+                dir_noise : noise to add to the prior probability
+                exploration_prop : proportion represented by the noise in the UCB computation
         """
         
         #
@@ -108,7 +110,10 @@ class MCTS ():
         self._pickle_count = 1
         self.c_base = 19652
         self.c_init = 1.25
+        self.dir_noise = dir_noise
+        self.exploration_prop = exploration_prop
         self.max_turn = max_turn
+        self.state_init = ''
         
         #
         # Actions memory
@@ -161,8 +166,8 @@ class MCTS ():
         self.s_sum = {
         }
         
-        # Storing the initial state
-        state_init = self._get_fen_position(chess)
+        # Reset the initial state
+        self.state_init = self._get_fen_position(chess)
 
         # Getting the next moves
         next_move_list_init, next_move_promotion_init, next_move_prob_init = self.playerModel.next_move_prob(chess)
@@ -188,7 +193,7 @@ class MCTS ():
 
                     # Getting the UCB score
                     actions = [self._get_action_hash(x, state) for x in next_move_list]
-                    next_move_list_score = self._ucb_next_moves(state, actions, next_move_prob)
+                    next_move_list_score = self._ucb_next_moves(state, actions, next_move_prob, dir_noise = self.dir_noise)
 
                     # Picking action
                     if len(next_move_list_score) > 0:
@@ -216,6 +221,7 @@ class MCTS ():
 
                     # Get next move list
                     next_move_list, next_move_promotion, next_move_prob = self.player0.next_move_prob(chess_temp)
+
                 except Exception as e:
                     # Break loop if there is a game error
                     print(f"MCTS Exception : {e}")
@@ -245,10 +251,10 @@ class MCTS ():
             next_move_list, next_move_promotion, next_move_prob = next_move_list_init, next_move_promotion_init, next_move_prob_init 
 
         # Getting the best move
-        values = np.array([x["q"] for x in self.sa_parameters[state_init].values()])
+        values = np.array([x["q"] for x in self.sa_parameters[self.state_init].values()])
         if len(values) > 0:
             best_move_id = np.argmax(values)
-            best_move = self._actions[list(self.sa_parameters[state_init].keys())[best_move_id]]
+            best_move = self._actions[list(self.sa_parameters[self.state_init].keys())[best_move_id]]
             reward = values[best_move_id]
         else:
             n_next_moves = len(next_move_list_init)
@@ -257,9 +263,9 @@ class MCTS ():
             reward = 0
 
         # Storing game history
-        if len(values) > 0:
-            if self.game_history_path is not None:
-                self._save_game_history(state_init, chess)
+        #if len(values) > 0:
+            #if self.game_history_path is not None:
+                #self._save_game_history(self.state_init, chess)
 
         if self.writer is not None:
             self.writer.add_text(
@@ -269,7 +275,7 @@ class MCTS ():
 
         return best_move, 
 
-    def _ucb_next_moves (self, state, actions, probabilities):
+    def _ucb_next_moves (self, state, actions, probabilities, dir_noise = None):
 
         """
             Compute the ucb score for list of possible moves moves
@@ -278,7 +284,14 @@ class MCTS ():
                 state : hash of the current state
                 actions : hash of the actions
                 probabilities : list of actions probabilities
+                dir_noise : value of the parameter of dirichlet noise to add to the vector, if None it is ignored
         """
+
+        probabilities = np.array(probabilities)
+        if dir_noise is not None:
+            noise = np.random.dirichlet(dir_noise*np.ones(len(probabilities)))
+
+            probabilities = (1-self.exploration_prop)*probabilities+self.exploration_prop*noise
 
         scores = [self._ucb_next_move(state,x,y) for x,y in zip(actions, probabilities)]
 
@@ -345,6 +358,39 @@ class MCTS ():
             }
         
         return action_hash
+
+    def _get_game_history (self, chess):
+
+        """
+            Get the game history after a move seach
+
+            Input : chess board
+            Output : tuple of values
+        """
+
+        # Get vector representation of the chess board
+        board_input = chess.current_board_to_NN_input()
+        board_matrix = chess.board
+
+        # Get MCTS values - policies pair
+        policies = [[self._actions[x[0]], x[1]["q"]] for x in self.sa_parameters[self.state_init].items()]
+        policies_q = self.__softmax(np.array([x[1] for x in policies])).tolist()
+        
+        for i in range(len(policies)):
+            policies[i][1] = policies_q[i]
+
+        history = (board_matrix, board_input, policies)
+
+        return history
+
+    def __softmax (self, array):
+
+        """
+            Apply the softmax function
+        """
+
+        res = np.exp(array)/np.exp(array).sum()
+        return res
 
     def _save_game_history (self, state_init, chess):
 
