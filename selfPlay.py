@@ -12,9 +12,9 @@ from deepChess.chessBoardFast import playChess
 from deepChess.model import get_lastest_model, load, deepChessNN
 from deepChess.players import kStockFishPlayer, deepChessPlayer
 from deepChess.MCTS import MCTS
-import copy
-import datetime
 import random
+import pickle
+import os
 
 # +
 #
@@ -31,11 +31,11 @@ shallowBlue_path = "./binaries/shallowblue"
 stockFish_path = "../stockfish_14.1_linux_x64_avx2/stockfish_14.1_linux_x64_avx2"
 players = {
     0:{
-        'k': 0.2, 
+        'k': 0.8, 
         'keep_history': False
     },
     1:{
-        'k': 0.8, 
+        'k': 0.9, 
         'keep_history':False
     }
 }
@@ -79,13 +79,45 @@ for i in range(n_games):
         current_players[0].new_game()
         current_players[1].new_game()
         current_players[11].new_game()
+
+        game_history = [] # History of the moves
         
         while (((chess.draw is None) or (chess.draw[0] == False)) and (chess.winner is None)):
             if chess.current_player == 0:
                 move = mcts.next_move(chess, n_mtcs)
                 chess.play_move(move[0])
+
+                # Store MCTS history
+                game_history.append(mcts._get_game_history(chess))
             elif chess.current_player == 1:
                 current_players[11].play_move(chess)
+
+        # Get the score
+        if chess.winner is not None:
+            score = 1 if chess.winner == 0 else -1
+        else:
+            score = 0      
+        
+        print(chess.winner)
+        print(f"End of the game n°{i} - Score : {score}")
+
+        # Update MCTS history
+        for j in range(len(game_history)):
+            game_history[j] = (*game_history[j], score)
+        
+        # Saving history for NN training
+        if data_folder is not None:
+            # File path
+            file_folder = "/".join([data_folder, mcts.mcts_tb_game_id])
+            file_path = f"{file_folder}/{i}.pickle"
+
+            # Creating dir
+            if not os.path.exists(file_folder):
+                os.makedirs(file_folder)
+
+            with open(file_path, 'wb') as file:
+                pickle.dump(game_history, file)
+
                 
     except Exception as e:
         print(f"Error occurence, game n°{i} aborded")

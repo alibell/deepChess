@@ -9,6 +9,9 @@
 
 from deepChess.model import get_lastest_model, load
 from deepChess.chessBoard import playChess
+from functools import reduce
+from operator import add
+import numpy as np
 import os
 import torch
 import glob
@@ -28,9 +31,9 @@ log_folder = "/home/ali/deepChess/logs"
 lr = 0.01 # Learning rate of the training
 device = "cuda:0" # Device in which the model is loaded
 timer = 60*1 # Timer in seconds before attempting again to train the network
-max_epoch = 100 # Number of time it can has seen the same data
+max_epoch = 10 # Number of time it can has seen the same data
 max_model = 100 # Maximum number of model record to keep
-batch_size = 256 # Batch size
+batch_size = 10 # Batch size
 
 # +
 #
@@ -41,7 +44,7 @@ batch_size = 256 # Batch size
 
 # Getting the model to train
 model_path = get_lastest_model(model_folder, 2)[1]
-model = load(model_path)
+model = load(model_path, device=device)
 model = model.to(device)
 
 # Setting the learning rate
@@ -89,19 +92,23 @@ while True:
                 history[game] = 0
 
             game_data = pickle.load(open(game, "br"))
-            X = tuple(torch.tensor(x,dtype = torch.float32, device = device) for x in game_data[1])
-            moves = [torch.tensor(
-                        playChess._localToNNMove(None, [x[0]], game_data[0], 0)[1], dtype = torch.float32, device = device).flatten()
-                                for x in game_data[2]]
-            rewards = [torch.tensor(x[1], dtype = torch.float32, device = device) for x in game_data[2]]
+            X = tuple(
+                [
+                    torch.tensor(
+                        np.array([y[1][x] for y in game_data if len(y[2]) > 0]),
+                        dtype = torch.float32,
+                        device=device
+                    )
+                    for x in [0,1]]
+            )
+            moves = torch.tensor(
+                        np.stack([reduce(add, [playChess._localToNNMove(None, [y[0]], x[0], 0)[1]*y[1] for y in x[2]]).flatten() for x in game_data if len(x[2]) > 0]), 
+                        dtype = torch.float32, device = device)
+            rewards = torch.tensor([x[3] for x in game_data  if len(x[2]) > 0], dtype = torch.float32, device = device)
 
             if len(moves) > 0:
-                X = (
-                    torch.stack([X[0] for x in range(len(moves))]),
-                    torch.stack([X[1] for x in range(len(moves))])
-                )
                 batch_tensor["X"].append(X)
-                y = (torch.stack(rewards), torch.stack(moves))
+                y = (rewards, moves)
                 batch_tensor["y"].append(y)
 
             # Saving the fit in history
@@ -112,9 +119,13 @@ while True:
             print("Training model")
 
             X = (torch.concat([x[0] for x in batch_tensor["X"]]), torch.concat([x[1] for x in batch_tensor["X"]]))
+            X = tuple(i.to(device) for i in X)
+
             y = (torch.concat([x[0] for x in batch_tensor["y"]]), torch.concat([x[1] for x in batch_tensor["y"]]))
+            y = tuple(i.to(device) for i in y)
 
             model.fit(X, y)
+
 
         # Saving the new model
         next_model_path = "/".join([
