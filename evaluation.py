@@ -22,7 +22,7 @@ import datetime
 # -
 
 log_folder = "/home/ali/deepChess/evaluations" # For game log
-eval_name = "sf_10_mcts10"
+eval_name = "sf_10_fullnn_mcts10"
 model_folder = "/home/ali/deepChess/models"
 device = "cpu"
 stockFish_path = "../stockfish_14.1_linux_x64_avx2/stockfish_14.1_linux_x64_avx2"
@@ -38,6 +38,9 @@ n_mtcs = 10
 #
 # -
 
+# Chess board
+chess_board = playChess(shallowBlue_path)
+
 # Getting model path
 model_path = get_lastest_model(model_folder, 2)[1]
 
@@ -45,7 +48,7 @@ model_path = get_lastest_model(model_folder, 2)[1]
 player0 = deepChessPlayer(0, device = device, model = model_path)
 
 # Loading mcts
-mcts = MCTS(player0, opponent_mcts, model_path, device = device, tensorboard_dir=None, game_history_path=None, game_id = None, log = False)
+mcts = MCTS(player0, player0, model_path, device = device, tensorboard_dir=None, game_history_path=None, game_id = None, log = False, dir_noise = None)
 
 # Output name : name of the file in wich we record the game
 output_name = f"{log_folder}/{eval_name}.csv"
@@ -64,7 +67,7 @@ while True:
         player0.update_model(model_path)
 
     try:
-        chess = playChess(shallowBlue_path)
+        chess = chess_board.copy()
         player0.new_game()
         opponent.new_game()
         opponent_mcts.new_game()
