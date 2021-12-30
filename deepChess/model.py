@@ -7,7 +7,7 @@
 #
 # -
 
-from torch.nn import Conv2d, Module, ReLU, MaxPool2d, Flatten, Linear, Softmax, Sequential, utils, BatchNorm2d
+from torch.nn import Conv2d, Module, ReLU, MaxPool2d, Flatten, Linear, Softmax, Sequential, utils, BatchNorm2d, Tanh, ModuleList
 from torch.optim import Adam
 from torch import dtype
 from torch.utils.tensorboard import SummaryWriter
@@ -44,18 +44,18 @@ class rl_loss (Module):
         
         true_value, mcts_policy = y_true
         estimed_value, estimed_policy = y_hat
-        
+        estimed_value = estimed_value.reshape(estimed_value.shape[0])
+
         rl_loss = torch.square(true_value-estimed_value) \
-                - torch.matmul(mcts_policy, estimed_policy.T) \
+                - (mcts_policy*torch.log(10e-8+estimed_policy)).sum(axis = 1) \
                 + self.regularization*torch.square(utils.parameters_to_vector(parameters)).sum()
-        
-        rl_loss = rl_loss/true_value.shape[0]
+        rl_loss = rl_loss.sum()/true_value.shape[0]
         
         return rl_loss
     
 class deepChessNN (Module):
     
-    def __init__ (self, channels = 96, regularization = 0.01, lr = 0.01, betas = (0.9, 0.999), weight_decay = 0, tensorboard_dir = "./logs"):
+    def __init__ (self, channels = 97, regularization = 0.01, lr = 0.01, betas = (0.9, 0.999), weight_decay = 0, tensorboard_dir = "./logs"):
         
         """
             Initialization of the neural network
@@ -68,91 +68,97 @@ class deepChessNN (Module):
         """
         
         super(deepChessNN, self).__init__()
-        
-        convolution_parameters = [
+    
+
+        self.n_residuals = 19
+
+        initial_convolution_block = [
             {
                 "module": Conv2d,
                 "in_channels": channels,
-                "out_channels": 100,
-                "kernel_size": (4,4),
-                "bias":True,
-                "padding":'same'
+                "out_channels": 256,
+                "kernel_size": (3,3),
+                "padding": "same",
+                "bias":False,
+                "stride":(1,1)
             },
             {
                 "module": BatchNorm2d,
-                "num_features":100
-            },
-            {
-                "module": ReLU
-            },
-            {
-                "module": MaxPool2d,
-                "kernel_size": (2,2)
-            },
-            {
-                "module": Conv2d,
-                "in_channels": 100,
-                "out_channels": 200,
-                "kernel_size": (5,5),
-                "bias":True,
-                "padding":'same'
-            },
-            {
-                "module": BatchNorm2d,
-                "num_features":200
-            },
-            {
-                "module": ReLU
-            },
-            {
-                "module": MaxPool2d,
-                "kernel_size": (2,2)
-            },
-            {
-                "module": Conv2d,
-                "in_channels": 200,
-                "out_channels": 400,
-                "kernel_size": (1,1),
-                "bias":True,
-                "padding":'same'
-            },
-            {
-                "module": BatchNorm2d,
-                "num_features":400
-            },
-            {
-                "module": Flatten
-            }
-        ]
-        
-        self._convolutions_operations = [x["module"](**
-                                        dict(zip(list(x.keys())[1:], list(x.values())[1:]))
-                                    ) for x in convolution_parameters]
-        
-        self.convolutions_operations = Sequential(*self._convolutions_operations)
-        
-        linear_parameters = [
-            {
-                "module": Linear,
-                "in_features": 1610,
-                "out_features": 800,
-                "bias":True
+                "num_features":256
             },
             {
                 "module": ReLU
             }
         ]
-        
-        self._linear_operations = [x["module"](**
+
+        residual_block = [
+            {
+                "module": Conv2d,
+                "in_channels": 256,
+                "out_channels": 256,
+                "kernel_size": (3,3),
+                "padding": "same",
+                "bias":False,
+                "stride":(1,1)
+            },
+            {
+                "module": BatchNorm2d,
+                "num_features":256
+            },
+            {
+                "module": ReLU
+            },
+            {
+                "module": Conv2d,
+                "in_channels": 256,
+                "out_channels": 256,
+                "kernel_size": (3,3),
+                "padding": "same",
+                "bias":False,
+                "stride":(1,1)
+            },
+            {
+                "module": BatchNorm2d,
+                "num_features":256
+            }
+        ]
+
+        self._initial_convolution = [x["module"](**
                                         dict(zip(list(x.keys())[1:], list(x.values())[1:]))
-                                    ) for x in linear_parameters]
-        self.linear_operations = Sequential(*self._linear_operations)
+                                    ) for x in initial_convolution_block]
+        self.initial_convolution = Sequential(*self._initial_convolution)
+        
+        self.residual_operations = ModuleList()
+        for i in range(self.n_residuals):
+            self._residual_operations = [x["module"](**
+                                        dict(zip(list(x.keys())[1:], list(x.values())[1:]))
+                                    ) for x in residual_block]
+            self.residual_operations.append(Sequential(*self._residual_operations))
         
         value_projection_parameters = [
             {
+                "module": Conv2d,
+                "in_channels": 256,
+                "out_channels": 2,
+                "padding": "same",
+                "kernel_size": (1,1),
+                "bias":False,
+                "stride":(1,1)
+            },
+            {
+                "module": BatchNorm2d,
+                "num_features":2
+            },
+            {
+                "module": ReLU
+            },
+            {
+                "module":Flatten
+            },
+            {
                 "module": Linear,
-                "in_features": 800,
-                "out_features": 400,
+                "in_features": 128,
+                "out_features": 32,
                 "bias":True
             },
             {
@@ -160,26 +166,11 @@ class deepChessNN (Module):
             },
             {
                 "module": Linear,
-                "in_features": 400,
-                "out_features": 100,
-                "bias":True
-            },
-            {
-                "module": ReLU
-            },
-            {
-                "module": Linear,
-                "in_features": 100,
-                "out_features": 25,
-                "bias":True
-            },
-            {
-                "module": ReLU
-            },
-            {
-                "module": Linear,
-                "in_features": 25,
+                "in_features": 32,
                 "out_features": 1
+            },
+            {
+                "module": Tanh
             }
         ]
         
@@ -190,23 +181,36 @@ class deepChessNN (Module):
         
         moves_projection_parameters = [
             {
-                "module": Linear,
-                "in_features": 800,
-                "out_features": 2000,
-                "bias":True
+                "module": Conv2d,
+                "in_channels": 256,
+                "out_channels": 256,
+                "kernel_size": (3,3),
+                "padding": "same",
+                "bias":False,
+                "stride":(1,1)
+            },
+            {
+                "module": BatchNorm2d,
+                "num_features":256
             },
             {
                 "module": ReLU
             },
             {
-                "module": Linear,
-                "in_features": 2000,
-                "out_features": 4672,
-                "bias":True
+                "module": Conv2d,
+                "in_channels": 256,
+                "out_channels": 73,
+                "kernel_size": (3,3),
+                "padding": "same",
+                "bias":False,
+                "stride":(1,1)
+            },
+            {
+                "module": Flatten
             },
             {
                 "module": Softmax,
-                "dim":1
+                "dim": 1
             }
         ]
         
@@ -216,7 +220,6 @@ class deepChessNN (Module):
         self.moves_projection_operations = Sequential(*self._moves_projection_operations)
         
         # Initiation of the loss
-        
         self.loss = rl_loss(regularization)
         
         # Initiation of the optimizer
@@ -226,10 +229,14 @@ class deepChessNN (Module):
         self.losses = []
         
         # Initialize tensorboard writer
-        self.writer = SummaryWriter(tensorboard_dir)
-        self.nn_uid = random.randint(0, 10e5)
-        current_date = datetime.datetime.strftime(datetime.datetime.now(), '%m_%d_%Y')
-        self.nn_tb_tag = str("/".join([current_date, str(self.nn_uid)]))
+        self.log = False
+        if tensorboard_dir is not None:
+            self.writer = SummaryWriter(tensorboard_dir)
+            self.nn_uid = random.randint(0, 10e5)
+            current_date = datetime.datetime.strftime(datetime.datetime.now(), '%m_%d_%Y')
+            self.nn_tb_tag = str("/".join([current_date, str(self.nn_uid)]))
+            self.log = True
+            self.i = 1
     
     def _register_loss(self, loss):
         
@@ -246,12 +253,17 @@ class deepChessNN (Module):
         
         # Only keeping 5 000 losses
         self.losses = self.losses[-5000:-1]+[self.losses[-1]]
-        
+        scalar_path = "/".join([str(self.nn_uid), "loss"])
+
         # Send the loss to tensorboard
         self.writer.add_scalar(
-            "/".join([self.nn_tb_tag, "loss"]),
-            loss
+            scalar_path,
+            loss.item(),
+            self.i
         )
+        self.i += 1
+
+        self.writer.flush()
         
         return None
     
@@ -270,23 +282,34 @@ class deepChessNN (Module):
         board = x[0]
         features = x[1] 
 
-        ## 1.1. Encoding with CNN
-        board = self.convolutions_operations(board)
-            
-        ## 1.2. Encoding for features
-        board_features = torch.concat([board, features], axis = 1)    
-        
-        ## 1.3. Projection of all together
-        board_features = self.linear_operations(board_features)
+        ## Converting features in 8x8 format
+        features = torch.concat([
+                features,
+                torch.zeros((features.shape[0], 64-features.shape[1]), device = features.device)
+            ], axis = 1
+        ).reshape((features.shape[0], 1, 8, 8))
+
+        ## Concatening board and features
+        input_tensor = torch.concat([board, features], axis = 1)
+
+        ## 1.1. Encoding with CNN : Initial convolution
+
+        output_tensor = self.initial_convolution(input_tensor)
+
+        ## 1.2. Encoding with CNN : Residuals blocks
+        for i in range(self.n_residuals):
+            skip_connection = output_tensor.clone()
+            output_tensor = self.residual_operations[i](output_tensor)
+            output_tensor = ReLU()(output_tensor+skip_connection)
         
         # 2. Decoding
         
         ## 2.1 Value function
-        value_function = board_features.clone()
+        value_function = output_tensor.clone()
         value_function = self.value_projection_operations(value_function)        
             
         ## 2.2 Probability distribution
-        moves = board_features
+        moves = output_tensor
         moves = self.moves_projection_operations(moves)            
 
         return value_function, moves
@@ -310,12 +333,14 @@ class deepChessNN (Module):
         
         # Forward pass
         y_hat = self.forward(x)
-        
+
         # Loss computation
         loss = self.loss(y_hat, y, self.parameters())
+        if self.log == True:
+            self._register_loss(loss)
         
         # Back propagation
-        loss.backward
+        loss.backward()
         
         # Gradient descent
         self.optimizer.step()
@@ -351,7 +376,8 @@ class deepChessNN (Module):
             'state_dict': self.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'losses': self.losses,
-            'tb_dir': self.writer.get_logdir()
+            'tb_dir': self.writer.get_logdir(),
+            'nn_uid': self.nn_uid
         }
         
         torch.save(state, path)
@@ -372,10 +398,17 @@ def load(path, device = "cpu", tensorboard_dir = None):
     
     # Get log dir
     if tensorboard_dir is None:
-        tensorboard_dir = state["tb_dir"]
-    
+        tensorboard_dir = state["tb_dir"]   
+
+    if "nn_uid" in state.keys():
+        nn_uid = state["nn_uid"]
+    else:
+        nn_uid = None
+
     # Instanciate the NN
     model = deepChessNN(tensorboard_dir=tensorboard_dir)
+    if nn_uid is not None:
+        model.nn_uid = nn_uid
     model.to(device)
     
     # Setting the parameters back
